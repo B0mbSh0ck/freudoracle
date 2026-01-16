@@ -10,6 +10,8 @@ from oracle.natal.natal_chart import natal_astrology
 from oracle.numerology.sucai import chinese_numerology
 from oracle.matrix.destiny_matrix import matrix_of_destiny
 from oracle.horoscope.horoscope_parser import horoscope_parser
+from oracle.compatibility.compatibility import compatibility
+from utils import fix_markdown
 
 
 async def handle_awaiting_data(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -33,6 +35,11 @@ async def handle_awaiting_data(update: Update, context: ContextTypes.DEFAULT_TYP
     # Обработка матрицы судьбы
     if context.user_data.get('awaiting_matrix_date'):
         await process_matrix_date(update, context, text)
+        return True
+    
+    # Обработка совместимости
+    if context.user_data.get('awaiting_compatibility_dates'):
+        await process_compatibility_dates(update, context, text)
         return True
     
     return False
@@ -83,10 +90,22 @@ async def process_natal_data(update: Update, context: ContextTypes.DEFAULT_TYPE,
             location=location
         )
         
+        # Сохраняем данные пользователя
+        context.user_data['user_info'] = {
+            'birth_date': birth_date,
+            'location': location,
+            'latitude': latitude,
+            'longitude': longitude,
+            'date_str': date_str,
+            'time_str': time_str
+        }
+        
         # Форматируем и отправляем
         formatted = natal_astrology.format_natal_chart(natal_chart)
-        await update.message.reply_text(formatted, parse_mode='Markdown')
+        await update.message.reply_text(fix_markdown(formatted), parse_mode='Markdown')
         
+        # Добавляем подсказку
+        await update.message.reply_text("💡 Данные сохранены. Теперь можно использовать их для других расчетов.")        
     except Exception as e:
         await update.message.reply_text(
             f"❌ Ошибка при расчете натальной карты: {str(e)}\n\n"
@@ -111,10 +130,15 @@ async def process_numerology_date(update: Update, context: ContextTypes.DEFAULT_
         
         sucai = chinese_numerology.calculate_sucai(birth_date)
         
+        # Сохраняем дату рождения (если еще нет или обновляем)
+        if 'user_info' not in context.user_data:
+            context.user_data['user_info'] = {}
+        context.user_data['user_info']['birth_date'] = birth_date
+        context.user_data['user_info']['date_str'] = date_str
+        
         # Форматируем и отправляем
         formatted = chinese_numerology.format_sucai(sucai)
-        await update.message.reply_text(formatted, parse_mode='Markdown')
-        
+        await update.message.reply_text(fix_markdown(formatted), parse_mode='Markdown')        
     except Exception as e:
         await update.message.reply_text(
             f"❌ Ошибка при расчете нумерологии: {str(e)}\n\n"
@@ -139,6 +163,12 @@ async def process_matrix_date(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         matrix = matrix_of_destiny.calculate_matrix(birth_date)
         
+        # Сохраняем дату (обновляем)
+        if 'user_info' not in context.user_data:
+            context.user_data['user_info'] = {}
+        context.user_data['user_info']['birth_date'] = birth_date
+        context.user_data['user_info']['date_str'] = date_str
+
         # Форматируем и отправляем
         formatted = matrix_of_destiny.format_matrix(matrix)
         
@@ -175,11 +205,68 @@ async def handle_horoscope_callback(update: Update, context: ContextTypes.DEFAUL
         )
         
         # Форматируем и отправляем
+        # Форматируем и отправляем
         formatted = horoscope_parser.format_horoscope(horoscope)
-        await query.message.reply_text(formatted, parse_mode='Markdown')
+        await query.message.reply_text(fix_markdown(formatted), parse_mode='Markdown')
         
     except Exception as e:
         await query.message.reply_text(
             f"❌ Ошибка при получении гороскопа: {str(e)}\n\n"
             "Попробуйте позже."
+        )
+
+
+async def process_compatibility_dates(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    """Обработка дат для совместимости"""
+    context.user_data['awaiting_compatibility_dates'] = False
+    
+    try:
+        # Парсим 2 даты
+        # Формат: 15.03.1990 20.01.1995
+        import re
+        dates = re.findall(r'\d{2}\.\d{2}\.\d{4}', text)
+        
+        if len(dates) != 2:
+            await update.message.reply_text(
+                "❌ Мне нужны ровно две даты для анализа.\n"
+                "Пример: `15.03.1990 20.01.1995`",
+                parse_mode='Markdown'
+            )
+            return
+            
+        d1_str, d2_str = dates
+        day1, month1, year1 = map(int, d1_str.split('.'))
+        day2, month2, year2 = map(int, d2_str.split('.'))
+        
+        dt1 = datetime(year1, month1, day1)
+        dt2 = datetime(year2, month2, day2)
+        
+        await update.message.reply_text("💞 Рассчитываю энергии совместимости...")
+        
+        # Считаем
+        result = compatibility.calculate(dt1, dt2)
+        
+        # Формируем отчет
+        speedometer = compatibility.render_speedometer(result['total_score'])
+        
+        report = f"""
+💞 *Совместимость пары:*
+
+{d1_str} + {d2_str}
+
+*Общий уровень:* {speedometer}
+
+*Детали:*
+• По числу сознания: {result['details']['sucai']}%
+• По матрице судьбы: {result['details']['matrix']}%
+• Биоритмика: {result['details']['biorhythm']}%
+
+{result['text_report']}
+"""
+        await update.message.reply_text(fix_markdown(report), parse_mode='Markdown')
+        
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Ошибка в данных: {e}\n"
+            "Попробуй снова: `дд.мм.гггг дд.мм.гггг`"
         )

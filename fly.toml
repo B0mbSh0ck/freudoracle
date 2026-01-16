@@ -1,20 +1,21 @@
-# fly.toml app configuration file generated for oracle-bot on 2024-01-16
-
-app = "oracle-bot-v1" # Можно будет изменить при первом запуске
-primary_region = "ams" # Амстердам (близко к РФ), можно выбрать другой
+# fly.toml app configuration file
+app = 'orc'
+primary_region = 'ams'
 
 [build]
   dockerfile = "Dockerfile"
 
-# Монтируем диск для базы данных SQLite, чтобы данные не исчезали
+# Монтируем диск для базы данных
 [mounts]
   source = "oracle_data"
   destination = "/app/data"
 
 [env]
-  # Указываем путь к БД на смонтированном диске
+  # Используем базу на диске
   DATABASE_URL = "sqlite:///data/database.db"
 
-# Настройки процесса
-[processes]
-  app = "python main.py"
+# Настройки виртуальной машины
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1

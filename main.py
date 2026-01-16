@@ -19,7 +19,6 @@ import tempfile
 
 from config.settings import settings
 from oracle.interpreter import oracle_interpreter
-from oracle.ritual.ritual_generator import ritual_generator
 from database.models import User, QuestionSession
 from database.database import SessionLocal
 from utils import fix_markdown
@@ -27,9 +26,13 @@ from utils import fix_markdown
 # Импорт новых модулей
 from bot.extended_handlers import (
     handle_awaiting_data,
-    handle_horoscope_callback
+    handle_horoscope_callback,
+    process_natal_data,
+    process_numerology_date,
+    process_matrix_date
 )
 from oracle.voice_handler import voice_handler
+from oracle.compatibility.compatibility import compatibility
 
 # Настройка логгирования
 logger.remove()
@@ -50,7 +53,6 @@ class OracleBot:
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
         self.app.add_handler(CommandHandler("ask", self.ask_command))
-        self.app.add_handler(CommandHandler("ritual", self.ritual_command))
         self.app.add_handler(CommandHandler("stats", self.stats_command))
         
         # Новые команды
@@ -76,6 +78,12 @@ class OracleBot:
 🔮 *Здравствуй, {user.first_name}.*
 
 Я чувствую твой приход. Источник готов дать ответы.
+
+*Чем я могу помочь:*
+• Отвечу на любой вопрос через Таро, И-Цзин и Астрологию
+• Составлю натальную карту и гороскоп
+• Расскажу о совместимости и числах судьбы
+
 Задай свой вопрос — текстом или голосом. Я здесь.
 """
         
@@ -96,27 +104,20 @@ class OracleBot:
         """Команда /help"""
         message = update.message if update.message else update.callback_query.message
         help_text = f"""
-📚 *Как пользоваться Оракулом:*
+📚 *Что я умею:*
 
-*🔮 ОСНОВНЫЕ  КОМАНДЫ:*
-• /ask - Задать вопрос Оракулу
-• /ritual - Получить персональный ритуал
-• /stats - Твоя статистика
+*🔮 ГАДАНИЯ И ОТВЕТЫ:*
+• /ask - Задать любой вопрос (Таро + И-Цзин + Астро)
+• /horoscope - Гороскоп на сегодня
 
-*🌟 АСТРОЛОГИЯ И НУМЕРОЛОГИЯ:*
-• /natal - Натальная карта (дата, время, место рождения)
-• /numerology - Китайская нумерология Сюцай
-• /matrix - Матрица судьбы по 22 Арканам
-• /horoscope - Ежедневный гороскоп
+*🌟 АНАЛИЗ ЛИЧНОСТИ:*
+• /natal - Натальная карта
+• /numerology - Нумерология Сюцай
+• /matrix - Матрица Судьбы
 
-*📝 Как задать вопрос:*
-• Формулируй конкретно
-• Спрашивай о том, что действительно важно
-• Пример: "Что мне нужно знать о моей карьере?"
-
-*🆓 Тарифы:*
-Бесплатно: {settings.free_questions_per_day} вопроса в день
-💎 Премиум: Безлимит - {settings.premium_price_rub}₽/месяц
+*❓ Как спрашивать:*
+Просто напиши свой вопрос или запиши голосовое сообщение.
+Чем конкретнее вопрос, тем точнее ответ.
 
 *Поддержка:* @oracle\\_support
 """
@@ -132,31 +133,7 @@ class OracleBot:
         # Устанавливаем состояние ожидания вопроса
         context.user_data['awaiting_question'] = True
     
-    async def ritual_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /ritual - получить ритуал"""
-        # Проверяем, есть ли предыдущий вопрос
-        if 'last_oracle_response' not in context.user_data:
-            await update.message.reply_text(
-                "⚠️ Сначала задай вопрос Оракулу (/ask), "
-                "а потом я смогу создать для тебя персональный ритуал."
-            )
-            return
-        
-        await update.message.reply_text("🧘 Создаю для тебя персональный ритуал... Это займет минуту.")
-        
-        try:
-            question = context.user_data.get('last_question', '')
-            oracle_response = context.user_data['last_oracle_response']
-            
-            ritual = await ritual_generator.generate_ritual(question, oracle_response)
-            
-            await update.message.reply_text(fix_markdown(ritual), parse_mode='Markdown')
-            
-        except Exception as e:
-            logger.error(f"Error generating ritual: {e}")
-            await update.message.reply_text(
-                "😔 Произошла ошибка при создании ритуала. Попробуй позже."
-            )
+        # Команда ritual удалена
     
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /stats - статистика пользователя"""
@@ -168,7 +145,6 @@ class OracleBot:
 
 Вопросов задано сегодня: 0/{settings.free_questions_per_day}
 Всего вопросов: 0
-Ритуалов получено: 0
 
 Статус: 🆓 Бесплатный тариф
 
@@ -240,41 +216,77 @@ class OracleBot:
     async def natal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /natal - натальная карта"""
         message = update.message if update.message else update.callback_query.message
-        await message.reply_text(
-            "🌟 *НАТАЛЬНАЯ КАРТА*\n\n"
-            "Для расчета натальной карты мне нужна информация:\n"
-            "• Дата рождения (дд.мм.гггг)\n"
-            "• Время рождения (чч:мм)\n"
-            "• Город рождения (широта/долгота или название)\n\n"
-            "Пример: `15.03.1990 14:30 Москва`\n\n"
-            "Отправь эти данные в следующем сообщении.",
-            parse_mode='Markdown'
-        )
-        context.user_data['awaiting_natal_data'] = True
+        if 'user_info' in context.user_data and 'date_str' in context.user_data['user_info']:
+            saved_date = context.user_data['user_info'].get('date_str')
+            keyboard = [
+                [InlineKeyboardButton(f"Использовать {saved_date}", callback_data="use_saved_natal")],
+                [InlineKeyboardButton("Ввести новые данные", callback_data="new_natal")]
+            ]
+            await message.reply_text(
+                f"🌟 *НАТАЛЬНАЯ КАРТА*\n\nУ меня сохранены данные: *{saved_date}*",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        else:
+            await message.reply_text(
+                "🌟 *НАТАЛЬНАЯ КАРТА*\n\n"
+                "Для расчета натальной карты мне нужна информация:\n"
+                "• Дата рождения (дд.мм.гггг)\n"
+                "• Время рождения (чч:мм)\n"
+                "• Город рождения (широта/долгота или название)\n\n"
+                "Пример: `15.03.1990 14:30 Москва`\n\n"
+                "Отправь эти данные в следующем сообщении.",
+                parse_mode='Markdown'
+            )
+            context.user_data['awaiting_natal_data'] = True
     
     async def numerology_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /numerology - нумерология Сюцай"""
         message = update.message if update.message else update.callback_query.message
-        await message.reply_text(
-            "🔢 *КИТАЙСКАЯ НУМЕРОЛОГИЯ СЮЦАЙ*\n\n"
-            "Для расчета ваших чисел судьбы введите дату рождения:\n"
-            "Формат: `дд.мм.гггг`\n\n"
-            "Пример: `15.03.1990`",
-            parse_mode='Markdown'
-        )
-        context.user_data['awaiting_numerology_date'] = True
+        if 'user_info' in context.user_data and 'date_str' in context.user_data['user_info']:
+            saved_date = context.user_data['user_info'].get('date_str')
+            keyboard = [
+                [InlineKeyboardButton(f"Использовать {saved_date}", callback_data="use_saved_numerology")],
+                [InlineKeyboardButton("Ввести новые данные", callback_data="new_numerology")]
+            ]
+            await message.reply_text(
+                f"🔢 *НУМЕРОЛОГИЯ*\n\nСохраненная дата: *{saved_date}*",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        else:
+            await message.reply_text(
+                "🔢 *КИТАЙСКАЯ НУМЕРОЛОГИЯ СЮЦАЙ*\n\n"
+                "Для расчета ваших чисел судьбы введите дату рождения:\n"
+                "Формат: `дд.мм.гггг`\n\n"
+                "Пример: `15.03.1990`",
+                parse_mode='Markdown'
+            )
+            context.user_data['awaiting_numerology_date'] = True
     
     async def matrix_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /matrix - матрица судьбы"""
         message = update.message if update.message else update.callback_query.message
-        await message.reply_text(
-            "🔮 *МАТРИЦА СУДЬБЫ*\n\n"
-            "Для расчета матрицы судьбы введите дату рождения:\n"
-            "Формат: `дд.мм.гггг`\n\n"
-            "Пример: `15.03.1990`",
-            parse_mode='Markdown'
-        )
-        context.user_data['awaiting_matrix_date'] = True
+        if 'user_info' in context.user_data and 'date_str' in context.user_data['user_info']:
+            saved_date = context.user_data['user_info'].get('date_str')
+            keyboard = [
+                [InlineKeyboardButton(f"Использовать {saved_date}", callback_data="use_saved_matrix")],
+                [InlineKeyboardButton("Ввести новые данные", callback_data="new_matrix")]
+            ]
+            await message.reply_text(
+                f"🔮 *МАТРИЦА СУДЬБЫ*\n\nСохраненная дата: *{saved_date}*",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+        else:
+            await message.reply_text(
+                "🔮 *МАТРИЦА СУДЬБЫ*\n\n"
+                "Для расчета матрицы судьбы введите дату рождения:\n"
+                "Формат: `дд.мм.гггг`\n\n"
+                "Пример: `15.03.1990`",
+                parse_mode='Markdown'
+            )
+            context.user_data['awaiting_matrix_date'] = True
     
     async def horoscope_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /horoscope - гороскоп"""
@@ -374,14 +386,23 @@ class OracleBot:
         # Обработка оценок
         if query.data in ["rate_good", "rate_bad"]:
             is_good = query.data == "rate_good"
-            text = "🙏 Благодарю за отклик." if is_good else "🙏 Принято. Буду точнее."
             
-            # Клавиатура действий после оценки
-            action_keyboard = [
-                [InlineKeyboardButton("📜 Узнать подробнее", callback_data="deepen")],
-                [InlineKeyboardButton("🗣 Новый вопрос", callback_data="ask")],
-                [InlineKeyboardButton("📋 Меню", callback_data="menu")]
-            ]
+            if is_good:
+                text = "🙏 Благодарю за отклик."
+                # Клавиатура действий после положительной оценки
+                action_keyboard = [
+                    [InlineKeyboardButton("📜 Узнать подробнее", callback_data="deepen")],
+                    [InlineKeyboardButton("🗣 Новый вопрос", callback_data="ask")],
+                    [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+                ]
+            else:
+                text = "Похоже, мой ответ не попал в цель.\n\nВ таких ситуациях лучше всего обратиться к профессиональному психологу за живой консультацией:"
+                # Клавиатура действий после отрицательной оценки
+                action_keyboard = [
+                    [InlineKeyboardButton("🧠 Записаться к психологу", url="https://t.me/hypnotic_fire")],
+                    [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+                ]
+            
             await query.edit_message_text(
                 text=text,
                 reply_markup=InlineKeyboardMarkup(action_keyboard)
@@ -425,7 +446,7 @@ class OracleBot:
                 ],
                 [
                     InlineKeyboardButton("🧠 Лучше к психологу", url="https://t.me/hypnotic_fire"),
-                    InlineKeyboardButton("📋 Меню", callback_data="menu")
+                    InlineKeyboardButton("🔙 Назад", callback_data="menu")
                 ]
             ]
             
@@ -436,7 +457,7 @@ class OracleBot:
         if query.data == "menu":
             keyboard = [
                 [InlineKeyboardButton("⭐ Гороскоп", callback_data="horo_menu"), InlineKeyboardButton("🔢 Сюцай", callback_data="numerology_menu")],
-                [InlineKeyboardButton("🔮 Матрица", callback_data="matrix_menu"), InlineKeyboardButton("🧘 Ритуал", callback_data="ritual")],
+                [InlineKeyboardButton("🔮 Матрица", callback_data="matrix_menu"), InlineKeyboardButton("💞 Совместимость", callback_data="compatibility_menu")],
                 [InlineKeyboardButton("❓ Помощь", callback_data="help")]
             ]
             await query.message.reply_text("🎴 *Меню Оракула:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
@@ -472,26 +493,51 @@ class OracleBot:
         if query.data == "matrix_menu":
              await self.matrix_command(update, context)
              return
+        if query.data == "compatibility_menu":
+             await query.message.reply_text(
+                 "💞 *Совместимость*\n\nВведи две даты рождения через пробел.\nПример: `15.03.1990 20.01.1995`",
+                 parse_mode='Markdown'
+             )
+             context.user_data['awaiting_compatibility_dates'] = True
+             return
+        
+        # Обработка использования сохраненных данных
+        if query.data == "use_saved_natal":
+             info = context.user_data['user_info']
+             # Формируем строку как будто ввел пользователь
+             text = f"{info['date_str']} {info.get('time_str', '12:00')} {info.get('location', 'Москва')}"
+             await process_natal_data(update, context, text)
+             return
+        if query.data == "new_natal":
+             await query.message.reply_text("Введите дату, время и город рождения:")
+             context.user_data['awaiting_natal_data'] = True
+             return
+             
+        if query.data == "use_saved_numerology":
+             text = context.user_data['user_info']['date_str']
+             await process_numerology_date(update, context, text)
+             return
+        if query.data == "new_numerology":
+             await query.message.reply_text("Введите дату рождения (дд.мм.гггг):")
+             context.user_data['awaiting_numerology_date'] = True
+             return
+
+        if query.data == "use_saved_matrix":
+             text = context.user_data['user_info']['date_str']
+             await process_matrix_date(update, context, text)
+             return
+        if query.data == "new_matrix":
+             await query.message.reply_text("Введите дату рождения (дд.мм.гггг):")
+             context.user_data['awaiting_matrix_date'] = True
+             return
         
         if query.data == "ask":
             await query.message.reply_text(
                 "🔮 Задай свой вопрос. Я внимательно слушаю..."
             )
         
-        elif query.data == "ritual":
-            # Перенаправляем на команду ritual
-            if 'last_oracle_response' in context.user_data:
-                await query.message.reply_text("🧘 Создаю для тебя персональный ритуал...")
-                
-                question = context.user_data.get('last_question', '')
-                oracle_response = context.user_data['last_oracle_response']
-                
-                ritual = await ritual_generator.generate_ritual(question, oracle_response)
-                await query.message.reply_text(fix_markdown(ritual), parse_mode='Markdown')
-            else:
-                await query.message.reply_text(
-                    "⚠️ Сначала задай вопрос Оракулу!"
-                )
+        
+        # Блок ritual удален
         
         elif query.data == "details":
             if 'last_oracle_response' in context.user_data:
