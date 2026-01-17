@@ -20,12 +20,24 @@ class User(Base):
     last_name = Column(String(255), nullable=True)
     is_premium = Column(Boolean, default=False)
     premium_until = Column(DateTime, nullable=True)
+    
+    # Лимиты и статистика
+    questions_today = Column(Integer, default=0)
+    last_question_date = Column(DateTime, default=datetime.utcnow)
+    total_questions_asked = Column(Integer, default=0)
+    
+    # Реферальная система
+    referred_by = Column(Integer, nullable=True)
+    referral_count = Column(Integer, default=0)
+    
+    # Настройки
+    daily_prediction_enabled = Column(Boolean, default=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     last_active = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     questions = relationship("QuestionSession", back_populates="user")
-    rituals = relationship("Ritual", back_populates="user")
     
     def __repr__(self):
         return f"<User(telegram_id={self.telegram_id}, username={self.username})>"
@@ -75,22 +87,18 @@ class FollowUpQuestion(Base):
         return f"<FollowUpQuestion(id={self.id}, session_id={self.session_id})>"
 
 
-class Ritual(Base):
-    """Психологический ритуал"""
-    __tablename__ = 'rituals'
+class UserData(Base):
+    """Дополнительные данные пользователя (дата рождения и т.д.)"""
+    __tablename__ = 'user_details'
     
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    session_id = Column(Integer, ForeignKey('question_sessions.id'), nullable=True)
-    ritual_name = Column(String(255), nullable=True)
-    ritual_content = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    birth_date = Column(DateTime, nullable=True)
+    birth_time = Column(String(10), nullable=True)
+    birth_location = Column(String(255), nullable=True)
+    zodiac_sign = Column(String(50), nullable=True)
     
-    # Relationships
-    user = relationship("User", back_populates="rituals")
-    
-    def __repr__(self):
-        return f"<Ritual(id={self.id}, user_id={self.user_id})>"
+    user = relationship("User", backref="details")
 
 
 class Payment(Base):
@@ -99,10 +107,10 @@ class Payment(Base):
     
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    amount = Column(Integer, nullable=False)  # в копейках
-    currency = Column(String(3), default='RUB')
+    amount = Column(Integer, nullable=False)  # в копейках или звездах
+    currency = Column(String(10), default='XTR')  # XTR для звезд
     status = Column(String(50), default='pending')  # pending, completed, failed
-    payment_provider = Column(String(50), nullable=True)
+    payment_type = Column(String(50), default='stars')  # stars, card
     payment_id = Column(String(255), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)

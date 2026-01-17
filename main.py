@@ -2,13 +2,14 @@
 Главный файл Telegram бота Оракула
 """
 import asyncio
-from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from datetime import datetime, time as dt_time
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, PreCheckoutQuery
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
+    PreCheckoutQueryHandler,
     ContextTypes,
     filters
 )
@@ -20,8 +21,11 @@ import tempfile
 from config.settings import settings
 from oracle.interpreter import oracle_interpreter
 from database.models import User, QuestionSession
-from database.database import SessionLocal
+from database.database import SessionLocal, init_db
+from database.user_manager import user_manager
 from utils import fix_markdown
+from oracle.horoscope.horoscope_parser import horoscope_parser
+from oracle.horoscope.moon_parser import moon_parser
 
 # Импорт новых модулей
 from bot.extended_handlers import (
@@ -46,7 +50,54 @@ class OracleBot:
     def __init__(self):
         self.app = Application.builder().token(settings.telegram_bot_token).build()
         self._setup_handlers()
+        self._setup_jobs()
     
+    def _setup_jobs(self):
+        """Настройка периодических задач"""
+        if self.app.job_queue:
+            # Каждый день в 6:00 утра (UTC)
+            self.app.job_queue.run_daily(self.daily_mailing_job, time=dt_time(hour=6, minute=0))
+            logger.info("Daily mailing job scheduled at 06:00 UTC")
+
+    async def daily_mailing_job(self, context: ContextTypes.DEFAULT_TYPE):
+        """Задача ежедневной рассылки прогнозов"""
+        logger.info("Starting daily mailing job...")
+        session = SessionLocal()
+        try:
+            # Находим всех активных пользователей с включенной рассылкой
+            users = session.query(User).filter(User.daily_prediction_enabled == True).all()
+            
+            # Генерируем общее послание дня (чтобы не дергать AI для каждого)
+            guidance = await oracle_interpreter.get_daily_guidance()
+            formatted_guidance = fix_markdown(guidance)
+            
+            # Кнопки для рассылки
+            keyboard = [
+                [InlineKeyboardButton("🔮 Задать вопрос", callback_data="ask")],
+                [InlineKeyboardButton("✨ Другие возможности", callback_data="menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            count = 0
+            for db_user in users:
+                try:
+                    text = f"🌅 *Утреннее послание Источника*\n\n{formatted_guidance}\n\nСветлых путей тебе сегодня! ✨\n\n🔮 *Есть вопрос? Задай его мне прямо сейчас...*"
+                    await context.bot.send_message(
+                        chat_id=db_user.telegram_id,
+                        text=text,
+                        parse_mode='Markdown',
+                        reply_markup=reply_markup
+                    )
+                    count += 1
+                    # Небольшая задержка чтобы не спамить API Telegram
+                    await asyncio.sleep(0.05)
+                except Exception as e:
+                    logger.warning(f"Could not send daily message to {db_user.telegram_id}: {e}")
+            
+            logger.info(f"Daily mailing completed. Sent to {count} users.")
+        finally:
+            session.close()
+
     def _setup_handlers(self):
         """Настроить обработчики команд и сообщений"""
         # Команды
@@ -67,6 +118,13 @@ class OracleBot:
         # Текстовые сообщения
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         
+        # Платежи и премиум
+        self.app.add_handler(CommandHandler("premium", self.premium_command))
+        self.app.add_handler(CommandHandler("referral", self.referral_command))
+        self.app.add_handler(CommandHandler("setpremium", self.set_premium_command)) # Для тестов
+        self.app.add_handler(PreCheckoutQueryHandler(self.precheckout_callback))
+        self.app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, self.successful_payment_callback))
+        
         # Голосовые сообщения
         self.app.add_handler(MessageHandler(filters.VOICE, self.handle_voice))
     
@@ -75,30 +133,40 @@ class OracleBot:
         user = update.effective_user
         
         welcome_message = f"""
-🔮 *Здравствуй, {user.first_name}.*
+🌀 *Приветствую тебя в обители ФрейдОракула!* 🌀
+*Максимально точный и правдивый ответ на твой вопрос!*
 
-Я чувствую твой приход. Источник готов дать ответы.
+Здравствуй, {user.first_name}. Я вижу, ты ищешь истину.
 
-*Чем я могу помочь:*
-• Отвечу на любой вопрос через Таро, И-Цзин и Астрологию
-• Составлю натальную карту и гороскоп
-• Расскажу о совместимости и числах судьбы
+Я — синтез древней мудрости и глубинной психологии. Мои ответы приходят из самого **ИСТОЧНИКА** 🌌 и глубин подсознания.
 
-Задай свой вопрос — текстом или голосом. Я здесь.
+*Что открыто тебе сегодня:*
+🔮 *Гадание:* Ответ на любой вопрос (Самый точный из всех!)
+🌌 *Судьба:* Натальная карта и предсказание по звездам 🔭
+🔢 *Числа:* Нумерология Сюцай и Матрица Души 🧮
+💞 *Связи:* Расчет совместимости ваших сердец 💘
+
+⚠️ *Помни:* Я даю ключи, но дверь открываешь ты сам. Вся ответственность за твою жизнь лежит только на тебе. ⚖️
+
+Задай свой вопрос текстом ⌨️ или голосом 🎙. Я внимаю... 🤫
 """
         
         keyboard = [
             [InlineKeyboardButton("🔮 Задать вопрос", callback_data="ask")],
-            [InlineKeyboardButton("🃏 Послание дня", callback_data="daily_message")],
-            [InlineKeyboardButton("✨ Другие возможности", callback_data="menu")],
+            [InlineKeyboardButton("🃏 Послание дня", callback_data="daily_message"), InlineKeyboardButton("🌙 Лунный календарь", callback_data="moon")],
+            [InlineKeyboardButton("👤 Мои данные", callback_data="stats"), InlineKeyboardButton("✨ Другие возможности", callback_data="menu")],
             [InlineKeyboardButton("🧠 Лучше к психологу", url="https://t.me/hypnotic_fire")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
         
-        # Сохраняем пользователя в БД
-        self._save_user(user)
+        # Сохраняем/получаем пользователя в БД
+        referred_by = None
+        if context.args and context.args[0].isdigit():
+            referred_by = int(context.args[0])
+            
+        user_manager.get_or_create_user(user, referred_by=referred_by)
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /help"""
@@ -119,7 +187,7 @@ class OracleBot:
 Просто напиши свой вопрос или запиши голосовое сообщение.
 Чем конкретнее вопрос, тем точнее ответ.
 
-*Поддержка:* @oracle\\_support
+*Поддержка:* @hypnotic_fire
 """
         await message.reply_text(help_text, parse_mode='Markdown')
     
@@ -138,81 +206,179 @@ class OracleBot:
     async def stats_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /stats - статистика пользователя"""
         user = update.effective_user
+        db_user = user_manager.get_or_create_user(user)
         
-        # В упрощенной версии - заглушка
+        status = "💎 PREMIUM" if db_user.is_premium else "🆓 BASIC"
+        energy_emoji = "⚡" if db_user.questions_today < settings.free_questions_per_day else "🪫"
+        
+        # Особый значок для премиум юзера
+        badge = "✨🌟🌀" if db_user.is_premium else ""
+        
         stats_text = f"""
-📊 *Твоя статистика, {user.first_name}:*
+{badge} 👤 *ПРОФИЛЬ: {user.first_name}* {badge}
 
-Вопросов задано сегодня: 0/{settings.free_questions_per_day}
-Всего вопросов: 0
-
-Статус: 🆓 Бесплатный тариф
-
-Хочешь безлимит? Команда /premium
+✨ Статус: *{status}*
 """
-        await update.message.reply_text(stats_text, parse_mode='Markdown')
+        # Данные пользователя
+        user_data = user_manager.get_user_data(user.id)
+        if user_data:
+            if user_data.birth_date:
+                stats_text += f"📅 Дата рождения: *{user_data.birth_date.strftime('%d.%m.%Y')}*\n"
+            if user_data.zodiac_sign:
+                # Находим эмодзи
+                sign_en = None
+                for en, ru in horoscope_parser.SIGN_NAMES_RU.items():
+                    if ru.lower() == user_data.zodiac_sign.lower():
+                        sign_en = en
+                        break
+                emoji = horoscope_parser.SIGN_EMOJIS.get(sign_en, "✨")
+                stats_text += f"♈ Знак: *{emoji} {user_data.zodiac_sign}*\n"
+        
+        stats_text += f"""
+{energy_emoji} Энергии сегодня: *{db_user.questions_today}/{settings.free_questions_per_day}*
+♾ Всего озарений: *{db_user.total_questions_asked}*
+👥 Приглашено друзей: *{db_user.referral_count}*
+"""
+        if db_user.is_premium and db_user.premium_until:
+             stats_text += f"📅 Активен до: *{db_user.premium_until.strftime('%d.%m.%Y')}*\n"
+             
+        stats_text += f"""
+🔔 Рассылка: *{"✅ Активна" if db_user.daily_prediction_enabled else "❌ Отключена"}*
+
+🔗 Твоя реферальная ссылка:
+`https://t.me/{(await context.bot.get_me()).username}?start={user.id}`
+"""
+        keyboard = []
+        if not db_user.is_premium:
+            keyboard.append([InlineKeyboardButton("🚀 Стать PREMIUM", callback_data="premium")])
+            
+        keyboard.append([InlineKeyboardButton("🔔 Вкл/Выкл рассылку", callback_data="toggle_daily")])
+        keyboard.append([InlineKeyboardButton("🔙 В меню", callback_data="menu")])
+        
+        await update.message.reply_text(stats_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка текстовых сообщений"""
-        
-        # Сначала проверяем, ожидаем ли мы какие-то данные
         if await handle_awaiting_data(update, context):
-            return  # Данные обработаны, выходим
+            return
+            
+        # Обработка уточняющего вопроса
+        if context.user_data.get('awaiting_followup'):
+            await self.process_followup_question(update, context, update.message.text)
+            return
         
-        question = update.message.text
+        await self.process_general_question(update, context, update.message.text)
+
+    async def process_followup_question(self, update: Update, context: ContextTypes.DEFAULT_TYPE, question: str):
+        """Обработка уточняющего вопроса"""
+        context.user_data['awaiting_followup'] = False
         user = update.effective_user
         
-        # Проверяем лимиты (упрощенная версия)
-        # В продакшене здесь будет проверка БД
+        count = context.user_data.get('followup_count', 0)
         
-        # Отправляем сообщение о том, что обрабатываем вопрос
+        # Лимит 2 уточнения
+        if count >= 2:
+            keyboard = [
+                [InlineKeyboardButton("♾ Новый вопрос", callback_data="ask"), InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+            ]
+            await update.message.reply_text(
+                "✋ Я уже сказал всё, что должен был. Истина не в многословии, а в осознании сказанного.\n\n"
+                "Перечитай мои ответы выше или задай совершенно новый вопрос.",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            return
+
+        await update.message.reply_text("⏳ Источник углубляет ответ...")
+        
+        try:
+            original_q = context.user_data.get('last_question', '')
+            # Получаем ответ
+            last_response = context.user_data.get('last_oracle_response', {})
+            # Формируем контекст для AI (берем интерпретацию)
+            context_data = {'previous_answer': last_response.get('interpretation', '')}
+            
+            answer = await oracle_interpreter.generate_followup_response(original_q, question, context_data)
+            
+            # Увеличиваем счетчик
+            context.user_data['followup_count'] = count + 1
+            
+            keyboard = [
+                [InlineKeyboardButton("🔍 Подробнее", callback_data="ask_details")] if count + 1 < 2 else [],
+                [InlineKeyboardButton("♾ Новый вопрос", callback_data="ask"), InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+            ]
+            # Убираем пустые списки
+            keyboard = [k for k in keyboard if k]
+            
+            await update.message.reply_text(fix_markdown(answer), parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
+            
+        except Exception as e:
+            logger.error(f"Error in followup: {e}")
+            await update.message.reply_text("❌ Источник туманен сейчас. Попробуй позже.")
+
+    async def process_general_question(self, update: Update, context: ContextTypes.DEFAULT_TYPE, question: str):
+        """Единая логика обработки вопроса (текст/голос)"""
+        user = update.effective_user
+        
+        # Проверка лимитов
+        allowed, result = user_manager.check_and_update_limits(user.id, free_limit=settings.free_questions_per_day)
+        
+        if not allowed:
+            keyboard = [[InlineKeyboardButton("💎 Купить Энергию", callback_data="premium")]]
+            await update.message.reply_text(
+                f"🪫 *Энергия исчерпана*\n\n{result}\nПриходи завтра или получи безлимитный доступ.",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+            return
+
         processing_msg = await update.message.reply_text(
             "🙏 Обращаюсь к Источнику с твоим вопросом...\n"
-            "Ожидай ответа."
+            "Ожидай ответа. 🌌"
         )
         
         try:
-            # Обрабатываем вопрос через оракула
-            oracle_response = await oracle_interpreter.process_question(question, user.first_name)
+            db_user = user_manager.get_or_create_user(user)
+            oracle_response = await oracle_interpreter.process_question(question, user.first_name, is_premium=db_user.is_premium)
             
-            # Сохраняем в контекст для возможных уточнений
             context.user_data['last_question'] = question
             context.user_data['last_oracle_response'] = oracle_response
             
-            # Формируем ответ
-            # Формируем ответ (только интерпретация, без технических деталей)
             response_text = fix_markdown(oracle_response['interpretation'])
             
-            # Удаляем сообщение о обработке
             await processing_msg.delete()
-            
-            # Отправляем ответ
             await update.message.reply_text(response_text, parse_mode='Markdown')
             
-            # Кнопки для оценки и дальнейших действий
+            # Сохраняем в историю
+            user_manager.save_question(user.id, question, oracle_response)
+            
+            # Сбрасываем счетчик уточнений
+            context.user_data['followup_count'] = 0
+            
             keyboard = [
                 [
                     InlineKeyboardButton("👍 Полезно", callback_data="rate_good"),
                     InlineKeyboardButton("👎 Не помогло", callback_data="rate_bad")
                 ],
+                [InlineKeyboardButton("🔍 Подробнее", callback_data="ask_details")],
                 [
-                    InlineKeyboardButton("🧠 Лучше к психологу", url="https://t.me/hypnotic_fire"),
-                    InlineKeyboardButton("🔍 Детали", callback_data="details")
-                ]
+                    InlineKeyboardButton("🧠 Психолог", url="https://t.me/hypnotic_fire"),
+                    InlineKeyboardButton("🔍 Детали расклада", callback_data="details")
+                ],
+                [InlineKeyboardButton("♾ Новый вопрос", callback_data="ask"), InlineKeyboardButton("🔙 В меню", callback_data="menu")]
             ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(
-                "Оцените ответ:", 
-                reply_markup=reply_markup
+                "Оцени ответ Источника: ✨", 
+                reply_markup=InlineKeyboardMarkup(keyboard)
             )
             
         except Exception as e:
             logger.error(f"Error processing question: {e}")
             await processing_msg.edit_text(
-                "😔 Произошла ошибка при обработке вопроса. "
-                "Пожалуйста, попробуй позже или обратись в поддержку."
+                "😔 Видение затуманено... Произошла ошибка. "
+                "Пожалуйста, попробуй позже или напиши в поддержку. 🛠"
             )
     
+
     async def natal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /natal - натальная карта"""
         message = update.message if update.message else update.callback_query.message
@@ -264,6 +430,7 @@ class OracleBot:
             )
             context.user_data['awaiting_numerology_date'] = True
     
+    
     async def matrix_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /matrix - матрица судьбы"""
         message = update.message if update.message else update.callback_query.message
@@ -289,94 +456,254 @@ class OracleBot:
             context.user_data['awaiting_matrix_date'] = True
     
     async def horoscope_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /horoscope - гороскоп"""
+        """Команда /horoscope - выбор периода"""
         message = update.message if update.message else update.callback_query.message
+        
         keyboard = [
             [
-                InlineKeyboardButton("♈ Овен", callback_data="horo_овен"),
-                InlineKeyboardButton("♉ Телец", callback_data="horo_телец"),
-                InlineKeyboardButton("♊ Близнецы", callback_data="horo_близнецы")
+                InlineKeyboardButton("📅 Сегодня", callback_data="period_today"),
+                InlineKeyboardButton("📅 Завтра", callback_data="period_tomorrow")
             ],
             [
-                InlineKeyboardButton("♋ Рак", callback_data="horo_рак"),
-                InlineKeyboardButton("♌ Лев", callback_data="horo_лев"),
-                InlineKeyboardButton("♍ Дева", callback_data="horo_дева")
+                InlineKeyboardButton("📅 Неделя", callback_data="period_week"),
+                InlineKeyboardButton("📅 Месяц", callback_data="period_month")
             ],
-            [
-                InlineKeyboardButton("♎ Весы", callback_data="horo_весы"),
-                InlineKeyboardButton("♏ Скорпион", callback_data="horo_скорпион"),
-                InlineKeyboardButton("♐ Стрелец", callback_data="horo_стрелец")
-            ],
-            [
-                InlineKeyboardButton("♑ Козерог", callback_data="horo_козерог"),
-                InlineKeyboardButton("♒ Водолей", callback_data="horo_водолей"),
-                InlineKeyboardButton("♓ Рыбы", callback_data="horo_рыбы")
-            ]
+            [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
         
         await message.reply_text(
-            "⭐ *ГОРОСКОП*\n\nВыберите ваш знак зодиака:",
-            reply_markup=reply_markup,
+            "⭐ *ГОРОСКОП*\n\nВыберите период прогноза:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+
+    async def show_horoscope_signs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Показать выбор знаков зодиака"""
+        query = update.callback_query
+        
+        # Определяем знак пользователя если есть
+        user_sign_en = None
+        user_sign_ru = None
+        
+        # Попытка получить данные из БД, если в контексте пусто
+        user_info = context.user_data.get('user_info', {})
+        if not user_info or 'birth_date' not in user_info:
+            db_data = user_manager.get_user_data(update.effective_user.id)
+            if db_data and db_data.birth_date:
+                user_info['birth_date'] = db_data.birth_date
+                context.user_data['user_info'] = user_info
+
+        if 'birth_date' in user_info:
+            bd = user_info['birth_date']
+            user_sign_en = horoscope_parser.get_sign_from_date(bd.day, bd.month)
+            user_sign_ru = horoscope_parser.SIGN_NAMES_RU.get(user_sign_en)
+
+        keyboard = []
+        
+        # Если есть знак пользователя, добавляем его первым
+        if user_sign_ru:
+            emoji = horoscope_parser.SIGN_EMOJIS.get(user_sign_en, "✨")
+            keyboard.append([InlineKeyboardButton(f"🌟 Твой знак: {emoji} {user_sign_ru}", callback_data=f"sign_{user_sign_ru.lower()}")])
+            keyboard.append([InlineKeyboardButton("───────────────", callback_data="none")])
+
+        # Общий список
+        signs = [
+            ("♈ Овен", "овен"), ("♉ Телец", "телец"), ("♊ Близнецы", "близнецы"),
+            ("♋ Рак", "рак"), ("♌ Лев", "лев"), ("♍ Дева", "дева"),
+            ("♎ Весы", "весы"), ("♏ Скорпион", "скорпион"), ("♐ Стрелец", "стрелец"),
+            ("♑ Козерог", "козерог"), ("♒ Водолей", "водолей"), ("♓ Рыбы", "рыбы")
+        ]
+        
+        for i in range(0, len(signs), 3):
+            row = [InlineKeyboardButton(s[0], callback_data=f"sign_{s[1]}") for s in signs[i:i+3]]
+            keyboard.append(row)
+            
+        keyboard.append([InlineKeyboardButton("🔙 К выбору периода", callback_data="horo_menu")])
+        
+        period = context.user_data.get('temp_horo_period', 'today')
+        period_ru = {"today": "сегодня", "tomorrow": "завтра", "week": "неделю", "month": "месяц"}.get(period, period)
+        
+        await query.message.edit_text(
+            f"⭐ *ГОРОСКОП на {period_ru.upper()}*\n\nВыберите знак зодиака:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
     
+    async def moon_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /moon - лунный календарь"""
+        message = update.message if update.message else update.callback_query.message
+        
+        await message.reply_text("🌙 Запрашиваю данные у Луны...")
+        
+        moon_info = await moon_parser.get_moon_info()
+        if moon_info:
+            formatted = moon_parser.format_moon_info(moon_info)
+            keyboard = [[InlineKeyboardButton("🔙 В меню", callback_data="menu")]]
+            await message.reply_text(formatted, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        else:
+            await message.reply_text("😔 Луна скрыта облаками (ошибка получения данных). Попробуйте позже.")
+
     async def handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка голосовых сообщений"""
-        # Сообщаем что "слушаем"
-        processing_msg = await update.message.reply_text("🎤 Слушаю ваш вопрос...")
+        processing_msg = await update.message.reply_text("🎤 Внимательно слушаю твой голос...")
         
         try:
-            # Получаем файл
             voice_file = await context.bot.get_file(update.message.voice.file_id)
             
-            # Создаем временный файл
             with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as temp_file:
                 temp_file_path = temp_file.name
             
-            # Скачиваем файл
             await voice_file.download_to_drive(temp_file_path)
             
-            # Транскрибируем
-            await processing_msg.edit_text("🎤 Распознаю речь...")
+            await processing_msg.edit_text("🎤 Распознаю шепот Источника... ⚡")
             text = await voice_handler.transcribe_audio(temp_file_path)
             
-            # Удаляем временный файл
-            os.remove(temp_file_path)
+            if os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
             
             if not text:
-                await processing_msg.edit_text("😔 Не удалось разобрать слова. Попробуйте написать текстом или записать снова.")
+                await processing_msg.edit_text("😔 Тишина... Не удалось разобрать слова. Попробуй еще раз или напиши текстом. ⌨️")
                 return
                 
-            # Показываем распознанный текст
-            await processing_msg.edit_text(f"🗣️ *Вы спросили:*\n_{text}_\n\n🔮 Гадаю...", parse_mode='Markdown')
+            await processing_msg.edit_text(f"🗣️ *Ты спросил:*\n_{text}_", parse_mode='Markdown')
             
-            # Подменяем текст сообщения и вызываем обработчик текста
-            # Создаем "фейковый" апдейт с текстом вместо голоса
-            update.message.text = text
-            
-            # Вызываем стандартную обработку вопроса
-            # Важно: используем метод _oracle_process_question или логику из handle_message
-            # Но проще просто вызвать основной метод обработки, если бы он был отдельным
-            
-            # В нашем случае handle_message сам берет update.message.text
-            # Мы его только что установили вручную!
-            
-            await self.handle_message(update, context)
-            
-            # ВАЖНО: handle_message сам отправит ответ. 
-            # Но у нас остался processing_msg с текстом "Гадаю...", который handle_message заменит своим processing_msg/ответом
-            # Это нормально.
+            # Передаем текст в единый процессор
+            await self.process_general_question(update, context, text)
             
         except Exception as e:
             logger.error(f"Error handling voice: {e}")
-            await processing_msg.edit_text("❌ Произошла ошибка при обработке голосового сообщения.")
+            await processing_msg.edit_text("❌ Туман сгустился... Ошибка обработки голоса. 🎙")
     
+    def _reset_state(self, context: ContextTypes.DEFAULT_TYPE):
+        """Сбросить все флаги ожидания"""
+        keys = ['awaiting_followup', 'awaiting_natal_data', 'awaiting_numerology_date', 
+                'awaiting_matrix_date', 'awaiting_compatibility_dates', 'awaiting_question']
+        for key in keys:
+            if key in context.user_data:
+                context.user_data[key] = False
+
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка нажатий на кнопки"""
         query = update.callback_query
         await query.answer()
         
+        # Обработка меню
+        if query.data == "menu":
+            self._reset_state(context)
+            keyboard = [
+                [InlineKeyboardButton("🔮 Задать вопрос", callback_data="ask")],
+                [InlineKeyboardButton("⭐ Гороскоп", callback_data="horo_menu"), InlineKeyboardButton("🌙 Луна", callback_data="moon")],
+                [InlineKeyboardButton("🔢 Сюцай", callback_data="numerology_menu"), InlineKeyboardButton("🔮 Матрица", callback_data="matrix_menu")],
+                [InlineKeyboardButton("💞 Совместимость", callback_data="compatibility_menu"), InlineKeyboardButton("👤 Мои данные", callback_data="stats")],
+                [InlineKeyboardButton("💎 Премиум", callback_data="premium"), InlineKeyboardButton("❓ Помощь", callback_data="help")]
+            ]
+            await query.message.reply_text("🎴 *Меню Оракула:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            return
+
+        if query.data == "moon":
+            await self.moon_command(update, context)
+            return
+
+        if query.data == "stats":
+            await self.stats_command(update, context)
+            return
+
+        if query.data.startswith("sphere_"):
+            sphere = query.data.split("_")[1]
+            user = update.effective_user
+            db_user = user_manager.get_or_create_user(user)
+            
+            # Проверка на премиум для определенных сфер
+            premium_spheres = ["love", "money", "purpose"]
+            if sphere in premium_spheres and not db_user.is_premium:
+                keyboard = [[InlineKeyboardButton("🚀 Купить Премиум", callback_data="premium")]]
+                await query.message.reply_text(
+                    "💎 *Эту сферу видит только Премиум*\n\nОна требует более тонкой настройки и глубокого анализа Источника. Подключи Премиум, чтобы открыть все грани своей судьбы.",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='Markdown'
+                )
+                return
+            
+            # Получаем данные последнего расчета
+            calc_type = context.user_data.get('last_calc_type')
+            calc_data = context.user_data.get('last_calc_data')
+            
+            if not calc_type or not calc_data:
+                await query.message.reply_text("⚠️ Данные расчета утеряны. Проведи расчет заново.")
+                return
+            
+            await query.message.reply_text("🔮 Обращаюсь к Источнику за подробностями...")
+            
+            # Получаем интерпретацию
+            # Для простоты передаем строковое представление данных
+            data_str = str(calc_data)
+            interpretation = await oracle_interpreter.get_sphere_interpretation(
+                sphere, calc_type, data_str, user.first_name, db_user.is_premium
+            )
+            
+            # Кнопки для выбора периода
+            keyboard = [
+                [
+                    InlineKeyboardButton("📅 На неделю", callback_data=f"period_recommend_week_{sphere}"),
+                    InlineKeyboardButton("📅 На месяц", callback_data=f"period_recommend_month_{sphere}")
+                ],
+                [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+            ]
+            
+            await query.message.reply_text(
+                f"✨ *РАЗБОР СФЕРЫ: {sphere.upper()}*\n\n{fix_markdown(interpretation)}",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
+            return
+
+        if query.data.startswith("period_recommend_"):
+             parts = query.data.split("_")
+             period = parts[2] # week/month
+             sphere = parts[3] # health/career/etc
+             
+             user = update.effective_user
+             db_user = user_manager.get_or_create_user(user)
+             
+             calc_type = context.user_data.get('last_calc_type')
+             calc_data = context.user_data.get('last_calc_data')
+             
+             if not calc_type or not calc_data:
+                 await query.message.reply_text("⚠️ Данные утеряны. Проведи расчет заново.")
+                 return
+                 
+             await query.message.reply_text(f"⏳ Источник готовит прогноз на {period}...")
+             
+             # Вызываем AI для прогноза на период
+             # Мы можем повторно использовать get_sphere_interpretation с небольшим дополнением в промпте
+             # Или добавить новый метод. Для скорости добавим здесь.
+             
+             period_ru = "неделю" if period == "week" else "месяц"
+             
+             prompt_addon = f"\n\nВАЖНО: Дай рекомендации именно на предстоящий {period_ru}."
+             
+             data_str = str(calc_data)
+             interpretation = await oracle_interpreter.get_sphere_interpretation(
+                 sphere + prompt_addon, calc_type, data_str, user.first_name, db_user.is_premium
+             )
+             
+             await query.message.reply_text(
+                 f"📅 *ПРОГНОЗ НА {period_ru.upper()} ({sphere.upper()})*\n\n{fix_markdown(interpretation)}",
+                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 В меню", callback_data="menu")]]),
+                 parse_mode='Markdown'
+             )
+             return
+
+        if query.data == "ask":
+            self._reset_state(context)
+            await query.message.reply_text(
+                "🗣 *Я слушаю...*\n\nНапиши свой вопрос или отправь голосовое сообщение. 🎙",
+                parse_mode='Markdown'
+            )
+            # Устанавливаем состояние ожидания вопроса
+            context.user_data['awaiting_question'] = True
+            return
+
         # Обработка гороскопов
         if query.data.startswith("horo_"):
             sign = query.data.replace("horo_", "")
@@ -438,32 +765,45 @@ class OracleBot:
                 'horary': {'formatted': 'Астрология момента'}
             }
             
-            # Кнопки оценки
+            # Кнопки
             keyboard = [
-                [
-                    InlineKeyboardButton("👍 Полезно", callback_data="rate_good"),
-                    InlineKeyboardButton("👎 Не помогло", callback_data="rate_bad")
-                ],
-                [
-                    InlineKeyboardButton("🧠 Лучше к психологу", url="https://t.me/hypnotic_fire"),
-                    InlineKeyboardButton("🔙 Назад", callback_data="menu")
-                ]
+                [InlineKeyboardButton("🔮 Задать вопрос", callback_data="ask")],
+                [InlineKeyboardButton("✨ Другие возможности", callback_data="menu")],
+                [InlineKeyboardButton("🧠 Лучше к психологу", url="https://t.me/hypnotic_fire")]
             ]
             
-            await query.message.reply_text(message, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            text = f"{message}\n\n🔮 *Есть вопрос? Задай его мне прямо сейчас...*"
+            await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
             return
 
-        # Обработка меню
-        if query.data == "menu":
-            keyboard = [
-                [InlineKeyboardButton("⭐ Гороскоп", callback_data="horo_menu"), InlineKeyboardButton("🔢 Сюцай", callback_data="numerology_menu")],
-                [InlineKeyboardButton("🔮 Матрица", callback_data="matrix_menu"), InlineKeyboardButton("💞 Совместимость", callback_data="compatibility_menu")],
-                [InlineKeyboardButton("❓ Помощь", callback_data="help")]
-            ]
-            await query.message.reply_text("🎴 *Меню Оракула:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+        if query.data == "premium":
+            await self.premium_command(update, context)
             return
 
-        # Обработка "Подробнее" (deepen)
+        if query.data == "buy_premium":
+            # Отправка инвойса на Telegram Stars
+            title = "Oracle Premium"
+            description = "Безлимитный доступ к Источнику и продвинутые модели ИИ на 30 дней."
+            payload = "premium_subscription"
+            currency = "XTR" # Код для Telegram Stars
+            price = 150
+            prices = [LabeledPrice("Premium Access", price)]
+            
+            await context.bot.send_invoice(
+                query.message.chat_id,
+                title,
+                description,
+                payload,
+                "",  # Provider token - пустой для Telegram Stars
+                currency,
+                prices
+            )
+            await query.answer()
+            return
+
+        # Обработка Послания Дня, Премиум и Deepen остается выше
+
         if query.data == "deepen":
             if 'last_oracle_response' in context.user_data:
                 await query.message.reply_text("📜 Вглядываюсь в глубину...")
@@ -485,15 +825,54 @@ class OracleBot:
 
         # Меню для модулей (чтобы кнопка Меню работала красиво)
         if query.data == "horo_menu":
+             self._reset_state(context)
              await self.horoscope_command(update, context)
              return
+
         if query.data == "numerology_menu":
+             self._reset_state(context)
              await self.numerology_command(update, context)
              return
+             
+        if query.data.startswith("period_"):
+             period = query.data.split("_")[1]
+             context.user_data['temp_horo_period'] = period
+             
+             # Проверяем, знаем ли мы знак пользователя
+             user_info = context.user_data.get('user_info', {})
+             user_sign_ru = None
+             
+             if not user_info or 'birth_date' not in user_info:
+                 db_data = user_manager.get_user_data(update.effective_user.id)
+                 if db_data and db_data.birth_date:
+                     user_info['birth_date'] = db_data.birth_date
+                     context.user_data['user_info'] = user_info
+             
+             if 'birth_date' in user_info:
+                 bd = user_info['birth_date']
+                 user_sign_en = horoscope_parser.get_sign_from_date(bd.day, bd.month)
+                 user_sign_ru = horoscope_parser.SIGN_NAMES_RU.get(user_sign_en)
+             
+             if user_sign_ru:
+                 # Если знак известен, сразу показываем гороскоп
+                 await handle_horoscope_callback(update, context, user_sign_ru.lower())
+             else:
+                 # Иначе показываем выбор знаков
+                 await self.show_horoscope_signs(update, context)
+             return
+             
+        if query.data.startswith("sign_"):
+             sign = query.data.split("_")[1]
+             await handle_horoscope_callback(update, context, sign)
+             return
+
         if query.data == "matrix_menu":
+             self._reset_state(context)
              await self.matrix_command(update, context)
              return
+
         if query.data == "compatibility_menu":
+             self._reset_state(context)
              await query.message.reply_text(
                  "💞 *Совместимость*\n\nВведи две даты рождения через пробел.\nПример: `15.03.1990 20.01.1995`",
                  parse_mode='Markdown'
@@ -531,10 +910,7 @@ class OracleBot:
              context.user_data['awaiting_matrix_date'] = True
              return
         
-        if query.data == "ask":
-            await query.message.reply_text(
-                "🔮 Задай свой вопрос. Я внимательно слушаю..."
-            )
+        # Эти кнопки теперь обрабатываются в начале метода (menu, ask)
         
         
         # Блок ritual удален
@@ -560,13 +936,100 @@ class OracleBot:
             else:
                 await query.message.reply_text("⚠️ Сначала задай вопрос!")
         
+        elif query.data == "ask_details":
+            # Проверяем лимит перед тем как просить ввести вопрос
+            count = context.user_data.get('followup_count', 0)
+            if count >= 2:
+                keyboard = [[InlineKeyboardButton("♾ Новый вопрос", callback_data="ask")]]
+                await query.message.reply_text(
+                    "✋ Лимит уточнений исчерпан. Я сказал всё, что нужно было услышать. Задай новый вопрос.",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+                return
+                
+            await query.message.reply_text("🗣 Что именно ты хочешь уточнить? Напиши свой вопрос.")
+            context.user_data['awaiting_followup'] = True
+            return
+
+        elif query.data == "toggle_daily":
+            session = SessionLocal()
+            try:
+                db_user = session.query(User).filter(User.telegram_id == query.from_user.id).first()
+                if db_user:
+                    db_user.daily_prediction_enabled = not db_user.daily_prediction_enabled
+                    session.commit()
+                    status = "включена" if db_user.daily_prediction_enabled else "выключена"
+                    await query.answer(f"Рассылка {status}!", show_alert=True)
+                    # Обновляем сообщение статов
+                    await self.stats_command(query, context)
+            finally:
+                session.close()
+            return
+
         elif query.data == "help":
             await self.help_command(query, context)
     
+    async def premium_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /premium - покупка премиума"""
+        message = update.message if update.message else update.callback_query.message
+        
+        text = """
+💎 *ORACLE PREMIUM*
+
+Открой полный доступ к мудрости Источника:
+• ♾ Безлимитные вопросы
+• 🧠 Доступ к продвинутой модели ИИ
+• 🃏 Подробные разборы карт и знаков
+• 🌅 Ежедневный утренний прогноз
+
+Стоимость: *150 Telegram Stars* ⭐
+"""
+        keyboard = [
+            [InlineKeyboardButton("💳 Купить за 150 ⭐", callback_data="buy_premium")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="menu")]
+        ]
+        await message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    async def referral_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /referral"""
+        user = update.effective_user
+        bot_username = (await context.bot.get_me()).username
+        link = f"https://t.me/{bot_username}?start={user.id}"
+        
+        text = f"""
+👥 *Партнерская программа*
+
+Приглашай друзей и получай бонусы!
+За каждого приглашенного друга ты получаешь +5 озарений сегодня.
+
+🔗 Твоя ссылка:
+`{link}`
+"""
+        await update.message.reply_text(text, parse_mode='Markdown')
+
+    async def precheckout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка пре-чекаута"""
+        query = update.pre_checkout_query
+        # Проверяем payload
+        if query.invoice_payload != 'premium_subscription':
+            await query.answer(ok=False, error_message="Что-то пошло не так...")
+        else:
+            await query.answer(ok=True)
+
+    async def successful_payment_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработка успешного платежа"""
+        user = update.effective_user
+        user_manager.update_premium_status(user.id)
+        
+        await update.message.reply_text(
+            "🎉 *Поздравляем!*\n\nТеперь ты обладаешь неограниченным доступом к Источнику. "
+            "Твоё сознание расширено, а путь ясен. ✨",
+            parse_mode='Markdown'
+        )
+
     def _save_user(self, user):
-        """Сохранить пользователя в БД (заглушка)"""
-        # TODO: Реализовать сохранение в БД
-        logger.info(f"User {user.id} ({user.first_name}) started the bot")
+        """Сохранить пользователя в БД"""
+        user_manager.get_or_create_user(user)
     
     def run(self):
         """Запустить бота"""
@@ -574,8 +1037,17 @@ class OracleBot:
         self.app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
+    async def set_premium_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда для админа: выдать премиум (для тестов)"""
+        user = update.effective_user
+        user_manager.update_premium_status(user.id)
+        await update.message.reply_text("💎 Тестовый Премиум активирован! Проверь /stats")
+
 def main():
     """Главная функция"""
+    # Инициализация базы данных
+    init_db()
+    
     bot = OracleBot()
     bot.run()
 

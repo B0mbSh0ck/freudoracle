@@ -2,7 +2,7 @@
 Расширенные обработчики для новых модулей Oracle Bot
 """
 from datetime import datetime
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import re
 
@@ -11,6 +11,7 @@ from oracle.numerology.sucai import chinese_numerology
 from oracle.matrix.destiny_matrix import matrix_of_destiny
 from oracle.horoscope.horoscope_parser import horoscope_parser
 from oracle.compatibility.compatibility import compatibility
+from database.user_manager import user_manager
 from utils import fix_markdown
 
 
@@ -48,6 +49,7 @@ async def handle_awaiting_data(update: Update, context: ContextTypes.DEFAULT_TYP
 async def process_natal_data(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     """Обработка данных для натальной карты"""
     context.user_data['awaiting_natal_data'] = False
+    message = update.message if update.message else update.callback_query.message
     
     try:
         # Парсим входные данные
@@ -55,7 +57,7 @@ async def process_natal_data(update: Update, context: ContextTypes.DEFAULT_TYPE,
         parts = text.strip().split()
         
         if len(parts) < 2:
-            await update.message.reply_text(
+            await message.reply_text(
                 "❌ Неверный формат. Используйте: `дд.мм.гггг чч:мм город`\n"
                 "Пример: `15.03.1990 14:30 Москва`",
                 parse_mode='Markdown'
@@ -81,7 +83,7 @@ async def process_natal_data(update: Update, context: ContextTypes.DEFAULT_TYPE,
         birth_date = datetime(year, month, day, hour, minute)
         
         # Рассчитываем натальную карту
-        await update.message.reply_text("🌟 Рассчитываю вашу натальную карту...")
+        await message.reply_text("🌟 Рассчитываю вашу натальную карту...")
         
         natal_chart = natal_astrology.calculate_natal_chart(
             birth_date=birth_date,
@@ -90,24 +92,65 @@ async def process_natal_data(update: Update, context: ContextTypes.DEFAULT_TYPE,
             location=location
         )
         
-        # Сохраняем данные пользователя
+        # Сохраняем данные пользователя в БД
+        user_sign_en = horoscope_parser.get_sign_from_date(birth_date.day, birth_date.month)
+        user_sign_ru = horoscope_parser.SIGN_NAMES_RU.get(user_sign_en)
+        
+        user_manager.save_user_data(
+            telegram_id=update.effective_user.id,
+            birth_date=birth_date,
+            birth_time=time_str,
+            birth_location=location,
+            zodiac_sign=user_sign_ru
+        )
+        
+        # Также обновляем в контексте для текущей сессии
         context.user_data['user_info'] = {
             'birth_date': birth_date,
-            'location': location,
-            'latitude': latitude,
-            'longitude': longitude,
             'date_str': date_str,
-            'time_str': time_str
+            'time_str': time_str,
+            'location': location
+        }
+        
+        # Кнопки для результатов
+        keyboard = [
+            [
+                InlineKeyboardButton("🏥 Здоровье (Free)", callback_data="sphere_health"),
+                InlineKeyboardButton("💼 Карьера (Free)", callback_data="sphere_career")
+            ],
+            [
+                InlineKeyboardButton("💞 Любовь (Premium)", callback_data="sphere_love"),
+                InlineKeyboardButton("💰 Деньги (Premium)", callback_data="sphere_money")
+            ],
+            [
+                InlineKeyboardButton("🎯 Предназначение (Premium)", callback_data="sphere_purpose")
+            ],
+            [InlineKeyboardButton("👍 Полезно", callback_data="rate_good"), InlineKeyboardButton("👎 Не помогло", callback_data="rate_bad")],
+            [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+        ]
+        
+        # Сохраняем тип и данные для интерпретации сфер
+        context.user_data['last_calc_type'] = 'natal'
+        context.user_data['last_calc_data'] = {
+            'date': date_str,
+            'time': time_str,
+            'location': location
         }
         
         # Форматируем и отправляем
         formatted = natal_astrology.format_natal_chart(natal_chart)
-        await update.message.reply_text(fix_markdown(formatted), parse_mode='Markdown')
+        await message.reply_text(
+            fix_markdown(formatted), 
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         
         # Добавляем подсказку
-        await update.message.reply_text("💡 Данные сохранены. Теперь можно использовать их для других расчетов.")        
+        await message.reply_text("💡 Данные сохранены. Теперь можно использовать их для других расчетов.")        
     except Exception as e:
-        await update.message.reply_text(
+        import logging
+        logging.error(f"Error in process_natal_data: {e}")
+        await message.reply_text(
             f"❌ Ошибка при расчете натальной карты: {str(e)}\n\n"
             "Проверьте формат данных и попробуйте снова.\n"
             "Используйте /natal чтобы начать заново."
@@ -117,6 +160,7 @@ async def process_natal_data(update: Update, context: ContextTypes.DEFAULT_TYPE,
 async def process_numerology_date(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     """Обработка даты для нумерологии"""
     context.user_data['awaiting_numerology_date'] = False
+    message = update.message if update.message else update.callback_query.message
     
     try:
         # Парсим дату
@@ -126,21 +170,54 @@ async def process_numerology_date(update: Update, context: ContextTypes.DEFAULT_
         birth_date = datetime(year, month, day)
         
         # Рассчитываем числа Сюцай
-        await update.message.reply_text("🔢 Рассчитываю ваши числа судьбы...")
+        await message.reply_text("🔢 Рассчитываю ваши числа судьбы...")
         
         sucai = chinese_numerology.calculate_sucai(birth_date)
         
-        # Сохраняем дату рождения (если еще нет или обновляем)
+        # Сохраняем дату рождения в БД
+        user_manager.save_user_data(
+            telegram_id=update.effective_user.id,
+            birth_date=birth_date
+        )
+        
+        # Обновляем в контексте
         if 'user_info' not in context.user_data:
             context.user_data['user_info'] = {}
         context.user_data['user_info']['birth_date'] = birth_date
         context.user_data['user_info']['date_str'] = date_str
         
+        # Кнопки для результатов
+        keyboard = [
+            [
+                InlineKeyboardButton("🏥 Здоровье (Free)", callback_data="sphere_health"),
+                InlineKeyboardButton("💼 Карьера (Free)", callback_data="sphere_career")
+            ],
+            [
+                InlineKeyboardButton("💞 Любовь (Premium)", callback_data="sphere_love"),
+                InlineKeyboardButton("💰 Деньги (Premium)", callback_data="sphere_money")
+            ],
+            [
+                InlineKeyboardButton("🎯 Предназначение (Premium)", callback_data="sphere_purpose")
+            ],
+            [InlineKeyboardButton("👍 Полезно", callback_data="rate_good"), InlineKeyboardButton("👎 Не помогло", callback_data="rate_bad")],
+            [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+        ]
+        
+        # Сохраняем тип и данные для интерпретации сфер
+        context.user_data['last_calc_type'] = 'numerology'
+        context.user_data['last_calc_data'] = {'date': date_str}
+        
         # Форматируем и отправляем
         formatted = chinese_numerology.format_sucai(sucai)
-        await update.message.reply_text(fix_markdown(formatted), parse_mode='Markdown')        
+        await message.reply_text(
+            fix_markdown(formatted), 
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
     except Exception as e:
-        await update.message.reply_text(
+        import logging
+        logging.error(f"Error in process_numerology_date: {e}")
+        await message.reply_text(
             f"❌ Ошибка при расчете нумерологии: {str(e)}\n\n"
             "Проверьте формат даты (дд.мм.гггг) и попробуйте снова.\n"
             "Используйте /numerology чтобы начать заново."
@@ -150,6 +227,7 @@ async def process_numerology_date(update: Update, context: ContextTypes.DEFAULT_
 async def process_matrix_date(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     """Обработка даты для матрицы судьбы"""
     context.user_data['awaiting_matrix_date'] = False
+    message = update.message if update.message else update.callback_query.message
     
     try:
         # Парсим дату
@@ -159,11 +237,17 @@ async def process_matrix_date(update: Update, context: ContextTypes.DEFAULT_TYPE
         birth_date = datetime(year, month, day)
         
         # Рассчитываем матрицу
-        await update.message.reply_text("🔮 Рассчитываю вашу матрицу судьбы...")
+        await message.reply_text("🔮 Рассчитываю вашу матрицу судьбы...")
         
         matrix = matrix_of_destiny.calculate_matrix(birth_date)
         
-        # Сохраняем дату (обновляем)
+        # Сохраняем дату в БД
+        user_manager.save_user_data(
+            telegram_id=update.effective_user.id,
+            birth_date=birth_date
+        )
+        
+        # Сохраняем дату в контексте
         if 'user_info' not in context.user_data:
             context.user_data['user_info'] = {}
         context.user_data['user_info']['birth_date'] = birth_date
@@ -172,17 +256,41 @@ async def process_matrix_date(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Форматируем и отправляем
         formatted = matrix_of_destiny.format_matrix(matrix)
         
+        # Кнопки для результатов
+        keyboard = [
+            [
+                InlineKeyboardButton("🏥 Здоровье (Free)", callback_data="sphere_health"),
+                InlineKeyboardButton("💼 Карьера (Free)", callback_data="sphere_career")
+            ],
+            [
+                InlineKeyboardButton("💞 Любовь (Premium)", callback_data="sphere_love"),
+                InlineKeyboardButton("💰 Деньги (Premium)", callback_data="sphere_money")
+            ],
+            [
+                InlineKeyboardButton("🎯 Предназначение (Premium)", callback_data="sphere_purpose")
+            ],
+            [InlineKeyboardButton("👍 Полезно", callback_data="rate_good"), InlineKeyboardButton("👎 Не помогло", callback_data="rate_bad")],
+            [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+        ]
+        
+        # Сохраняем тип и данные для интерпретации сфер
+        context.user_data['last_calc_type'] = 'matrix'
+        context.user_data['last_calc_data'] = {'date': date_str}
+
         # Так как матрица может быть длинной, отправляем частями если нужно
         if len(formatted) > 4000:
-            # Разбиваем на части
             parts = [formatted[i:i+4000] for i in range(0, len(formatted), 4000)]
-            for part in parts:
-                await update.message.reply_text(part, parse_mode='Markdown')
+            for i, part in enumerate(parts):
+                # Клавиатура только к последнему сообщению
+                markup = InlineKeyboardMarkup(keyboard) if i == len(parts)-1 else None
+                await message.reply_text(part, parse_mode='Markdown', reply_markup=markup)
         else:
-            await update.message.reply_text(formatted, parse_mode='Markdown')
+            await message.reply_text(formatted, parse_mode='Markdown', reply_markup=InlineKeyboardMarkup(keyboard))
         
     except Exception as e:
-        await update.message.reply_text(
+        import logging
+        logging.error(f"Error in process_matrix_date: {e}")
+        await message.reply_text(
             f"❌ Ошибка при расчете матрицы: {str(e)}\n\n"
             "Проверьте формат даты (дд.мм.гггг) и попробуйте снова.\n"
             "Используйте /matrix чтобы начать заново."
@@ -195,19 +303,28 @@ async def handle_horoscope_callback(update: Update, context: ContextTypes.DEFAUL
     await query.answer()
     
     try:
-        # Получаем гороскоп
-        await query.message.reply_text(f"⭐ Получаю гороскоп для знака {sign.capitalize()}...")
+        # Получаем период из контекста (по умолчанию сегодня)
+        period = context.user_data.get('temp_horo_period', 'today')
         
         horoscope = await horoscope_parser.get_horoscope(
             sign=sign,
-            period='today',
-            use_fallback=True  # Пока используем fallback, пока парсинг не настроен
+            period=period
         )
         
         # Форматируем и отправляем
-        # Форматируем и отправляем
         formatted = horoscope_parser.format_horoscope(horoscope)
-        await query.message.reply_text(fix_markdown(formatted), parse_mode='Markdown')
+        
+        keyboard = [
+            [InlineKeyboardButton("👍 Полезно", callback_data="rate_good"), InlineKeyboardButton("👎 Не помогло", callback_data="rate_bad")],
+            [InlineKeyboardButton("⏳ Другой период", callback_data="horo_menu")],
+            [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+        ]
+        
+        await query.message.reply_text(
+            fix_markdown(formatted), 
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         
     except Exception as e:
         await query.message.reply_text(
@@ -219,6 +336,7 @@ async def handle_horoscope_callback(update: Update, context: ContextTypes.DEFAUL
 async def process_compatibility_dates(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
     """Обработка дат для совместимости"""
     context.user_data['awaiting_compatibility_dates'] = False
+    message = update.message if update.message else update.callback_query.message
     
     try:
         # Парсим 2 даты
@@ -227,7 +345,7 @@ async def process_compatibility_dates(update: Update, context: ContextTypes.DEFA
         dates = re.findall(r'\d{2}\.\d{2}\.\d{4}', text)
         
         if len(dates) != 2:
-            await update.message.reply_text(
+            await message.reply_text(
                 "❌ Мне нужны ровно две даты для анализа.\n"
                 "Пример: `15.03.1990 20.01.1995`",
                 parse_mode='Markdown'
@@ -241,7 +359,7 @@ async def process_compatibility_dates(update: Update, context: ContextTypes.DEFA
         dt1 = datetime(year1, month1, day1)
         dt2 = datetime(year2, month2, day2)
         
-        await update.message.reply_text("💞 Рассчитываю энергии совместимости...")
+        await message.reply_text("💞 Рассчитываю энергии совместимости...")
         
         # Считаем
         result = compatibility.calculate(dt1, dt2)
@@ -263,10 +381,22 @@ async def process_compatibility_dates(update: Update, context: ContextTypes.DEFA
 
 {result['text_report']}
 """
-        await update.message.reply_text(fix_markdown(report), parse_mode='Markdown')
+        # Кнопки
+        keyboard = [
+            [InlineKeyboardButton("👍 Полезно", callback_data="rate_good"), InlineKeyboardButton("👎 Не помогло", callback_data="rate_bad")],
+            [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+        ]
+        
+        await message.reply_text(
+            fix_markdown(report), 
+            parse_mode='Markdown',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
         
     except Exception as e:
-        await update.message.reply_text(
+        import logging
+        logging.error(f"Error in process_compatibility_dates: {e}")
+        await message.reply_text(
             f"❌ Ошибка в данных: {e}\n"
             "Попробуй снова: `дд.мм.гггг дд.мм.гггг`"
         )

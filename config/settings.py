@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     
     # Monetization
     payment_provider_token: str | None = None
-    free_questions_per_day: int = 3
+    free_questions_per_day: int = 2
     premium_price_rub: int = 499
     
     class Config:

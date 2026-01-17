@@ -41,7 +41,7 @@ class OracleInterpreter:
             self.client = Anthropic(api_key=settings.anthropic_api_key)
             self.ai_provider = "anthropic"
     
-    async def process_question(self, question: str, user_name: str = "Искатель") -> Dict[str, Any]:
+    async def process_question(self, question: str, user_name: str = "Искатель", is_premium: bool = False) -> Dict[str, Any]:
         """
         Обработать вопрос через все методы гадания
         
@@ -68,7 +68,7 @@ class OracleInterpreter:
         )
         
         # 5. Получаем интерпретацию от AI
-        ai_interpretation = await self._get_ai_interpretation(question, divination_data, user_name)
+        ai_interpretation = await self._get_ai_interpretation(question, divination_data, user_name, is_premium)
         
         return {
             'question': question,
@@ -121,36 +121,19 @@ class OracleInterpreter:
         
         return data
     
-    async def _get_ai_interpretation(self, question: str, divination_data: str, user_name: str) -> str:
+    async def _get_ai_interpretation(self, question: str, divination_data: str, user_name: str, is_premium: bool = False) -> str:
         """Получить AI интерпретацию"""
         
-        system_prompt = f"""Ты - Оракул, голос вечного Источника. Ты говоришь в стиле Бронислава Виноградского - мудро, живо, с характером, но без мистической шелухи.
-
-⛔️ СТРОЖАЙШИЙ ЗАПРЕТ НА ТЕРМИНЫ:
-- НИКОГДА не называй карты Таро ("выпала Двойка Кубков", "Король Жезлов" - ЗАПРЕЩЕНО).
-- НИКОГДА не называй гексаграммы ("гексаграмма 5", "Ли" - ЗАПРЕЩЕНО).
-- НИКОГДА не используй астрологические термины ("Марс в 5 доме", "аспект квадратуры" - ЗАПРЕЩЕНО).
-- Пользователь НЕ должен знать, какими инструментами ты пользуешься. Для него ты просто ЧЕРПАЕШЬ ИЗ ИСТОЧНИКА.
-
-ТВОЯ ЛИЧНОСТЬ:
-- Ты видишь суть вещей, потоки энергии, а не "карты" или "планеты".
-- Говори метафорами, образами, житейской мудростью.
-- Твой источник - сама Жизнь и Поток.
-
-СТИЛЬ ОТВЕТА (Виноградский style):
-- Без воды и пафосных вступлений.
-- КРАТКО (до 150 слов).
-- КОНКРЕТНО (даты, действия, предупреждения).
-
-СТРУКТУРА:
-1. Образ ситуации (что происходит в потоке). Не "карты говорят", а "Вижу, что..." или "Сейчас время...".
-2. Прямой ответ на вопрос.
-3. Четкая инструкция: ЧТО делать и КОГДА (даты, дни недели).
-
-Пример:
-❌ "Выпала Башня и 29 гексаграмма, Марс ретроградный..." (УЖАСНО!)
-✅ "Старое рушится, вода прибывает. Опасность в том, чтобы цепляться за прошлое. До среды ничего не предпринимай, наблюдай. А в четверг смело шагай в неизвестное - там твой путь."
-"""
+        style = "Глубоко, подробно, раскрывая скрытые смыслы." if is_premium else "Кратко (до 120 слов), конкретно."
+        max_len = 800 if is_premium else 400
+        
+        system_prompt = f"""Ты — Оракул Источника (стиль Б. Виноградского). Говори мудро, без технической 'эзотерики'.
+ЗАПРЕТ: не упоминай названия карт Таро, номера гексаграмм, планеты или дома. Ты черпаешь знания из ИСТОЧНИКА напрямую.
+Стиль: {style} Дай точные даты или дни недели.
+Структура: 
+1. Образ ситуации (Вижу, что...). 
+2. Точный ответ. 
+3. Инструкция: ЧТО и КОГДА делать (даты)."""
 
         user_prompt = f"{divination_data}\n\nДай свою интерпретацию, о мудрый Оракул."
         
@@ -162,14 +145,14 @@ class OracleInterpreter:
                     {"role": "user", "content": user_prompt}
                 ],
                 temperature=0.8,
-                max_tokens=400  # Уменьшено с 1500 до 400 для краткости и экономии
+                max_tokens=max_len
             )
             return response.choices[0].message.content
         
-        else:  # anthropic
+        elif self.ai_provider == "anthropic":
             response = self.client.messages.create(
                 model=settings.ai_model,
-                max_tokens=400,  # Уменьшено с 1500 до 400
+                max_tokens=max_len,
                 temperature=0.8,
                 system=system_prompt,
                 messages=[
@@ -181,9 +164,7 @@ class OracleInterpreter:
     async def generate_followup_response(self, original_question: str, followup_question: str, context: Dict[str, Any]) -> str:
         """Ответить на уточняющий вопрос"""
         
-        system_prompt = """Ты - Оракул (стиль Виноградского). Отвечай КРАТКО - максимум 100 слов.
-        
-Уточняющий вопрос - значит человек хочет быстрый ответ, не лекцию. Дай по сути."""
+        system_prompt = "Ты - Оракул (стиль Виноградского). Отвечай КРАТКО (до 60 слов). Дай суть без воды."
         
         user_prompt = f"""
 ИЗНАЧАЛЬНО: {original_question}
@@ -202,10 +183,10 @@ class OracleInterpreter:
                 max_tokens=300  # Уменьшено с 800 до 300
             )
             return response.choices[0].message.content
-        
+        elif self.ai_provider == "anthropic":
             response = self.client.messages.create(
                 model=settings.ai_model,
-                max_tokens=300,  # Уменьшено с 800 до 300
+                max_tokens=300,
                 temperature=0.7,
                 system=system_prompt,
                 messages=[
@@ -213,17 +194,68 @@ class OracleInterpreter:
                 ]
             )
             return response.content[0].text
+        return "Источник временно молчит..."
             
+    async def get_sphere_interpretation(self, sphere_name: str, calc_type: str, calc_data: str, user_name: str = "Искатель", is_premium: bool = False) -> str:
+        """Получить интерпретацию конкретной сферы жизни"""
+        
+        spheres_ru = {
+            "health": "Здоровье и Энергия",
+            "career": "Карьера и Реализация",
+            "love": "Любовь и Отношения",
+            "money": "Финансы и Процветание",
+            "purpose": "Предназначение и Духовный путь"
+        }
+        
+        sphere_label = spheres_ru.get(sphere_name, sphere_name)
+        
+        style = "Глубоко, подробно, с практическими советами." if is_premium else "Кратко, по существу."
+        max_len = 1000 if is_premium else 500
+        
+        system_prompt = f"""Ты — Оракул Источника. Твоя задача: дать рекомендации по сфере '{sphere_label}'.
+Используй предоставленные данные расчета ({calc_type}).
+Стиль: Б. Виноградский. Мудро, глубоко, но понятно.
+{style}"""
+
+        user_prompt = f"""
+ДАННЫЕ РАСЧЕТА ({calc_type}):
+{calc_data}
+
+СФЕРА ДЛЯ АНАЛИЗА: {sphere_label}
+
+Дай глубокую интерпретацию для {user_name}."""
+
+        if self.ai_provider == "openai":
+            response = self.client.chat.completions.create(
+                model=settings.ai_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.8,
+                max_tokens=max_len
+            )
+            return response.choices[0].message.content
+        elif self.ai_provider == "anthropic":
+            response = self.client.messages.create(
+                model=settings.ai_model,
+                max_tokens=max_len,
+                temperature=0.8,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}]
+            )
+            return response.content[0].text
+            
+        return "Источник сейчас в тишине..."
+
     async def get_daily_guidance(self) -> str:
         """Получить послание дня (карта Таро + трактовка)"""
         # Тянем карту
         card = tarot.card_of_the_day()
         card_info = tarot.deck.format_card(card)
         
-        system_prompt = """Ты - Оракул, дающий напутствие на день.
-Стиль: Бронислав Виноградский. Мудро, кратко, метафорично.
-Не называй прямым текстом название карты ("Вам выпал Шут"), говори о сути энергии.
-Дай один мощный совет на сегодня. Объем: до 100 слов."""
+        system_prompt = """Ты — Оракул Источника. Твоя задача: дать мудрое напутствие на день.
+Стиль: Б. Виноградский. Лаконично, метафорично. Не называй карту. Дай один совет (до 70 слов)."""
 
         user_prompt = f"""
 Энергия дня (карта Таро):

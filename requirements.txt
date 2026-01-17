@@ -1,5 +1,5 @@
 # Core Bot Framework
-python-telegram-bot==20.7
+python-telegram-bot[job-queue]==20.7
 python-dotenv==1.0.0
 
 # AI and NLP
@@ -25,6 +25,7 @@ pydantic-settings==2.1.0
 # Utilities
 python-dateutil==2.8.2
 loguru==0.7.2
+apscheduler==3.10.4
 
 # Web scraping (for horoscopes)
 beautifulsoup4==4.12.3

@@ -58,6 +58,48 @@ class HoroscopeParser:
         'aquarius': 'Водолей',
         'pisces': 'Рыбы'
     }
+
+    SIGN_EMOJIS = {
+        'aries': '♈',
+        'taurus': '♉',
+        'gemini': '♊',
+        'cancer': '♋',
+        'leo': '♌',
+        'virgo': '♍',
+        'libra': '♎',
+        'scorpio': '♏',
+        'sagittarius': '♐',
+        'capricorn': '♑',
+        'aquarius': '♒',
+        'pisces': '♓'
+    }
+    
+    def get_sign_from_date(self, day: int, month: int) -> str:
+        """Определить знак зодиака по дню и месяцу"""
+        if (month == 3 and day >= 21) or (month == 4 and day <= 19):
+            return "aries"
+        elif (month == 4 and day >= 20) or (month == 5 and day <= 20):
+            return "taurus"
+        elif (month == 5 and day >= 21) or (month == 6 and day <= 20):
+            return "gemini"
+        elif (month == 6 and day >= 21) or (month == 7 and day <= 22):
+            return "cancer"
+        elif (month == 7 and day >= 23) or (month == 8 and day <= 22):
+            return "leo"
+        elif (month == 8 and day >= 23) or (month == 9 and day <= 22):
+            return "virgo"
+        elif (month == 9 and day >= 23) or (month == 10 and day <= 22):
+            return "libra"
+        elif (month == 10 and day >= 23) or (month == 11 and day <= 21):
+            return "scorpio"
+        elif (month == 11 and day >= 22) or (month == 12 and day <= 21):
+            return "sagittarius"
+        elif (month == 12 and day >= 22) or (month == 1 and day <= 19):
+            return "capricorn"
+        elif (month == 1 and day >= 20) or (month == 2 and day <= 18):
+            return "aquarius"
+        else:
+            return "pisces"
     
     # Запасные гороскопы если парсинг не сработает
     FALLBACK_HOROSCOPES = {
@@ -104,14 +146,22 @@ class HoroscopeParser:
         
         # Нормализуем знак
         sign_lower = sign.lower()
+        sign_en = 'aries' # default
+
         if sign_lower in self.ZODIAC_SIGNS:
             sign_en = self.ZODIAC_SIGNS[sign_lower]
-        elif sign_lower in self.SIGN_NAMES_RU.values():
+        elif sign_lower in self.SIGN_NAMES_RU:
             sign_en = sign_lower
         else:
-            # Если знак не распознан, используем fallback
-            use_fallback = True
-            sign_en = 'aries'
+            # Пробуем найти по русскому названию в SIGN_NAMES_RU (values)
+            for en, ru in self.SIGN_NAMES_RU.items():
+                if ru.lower() == sign_lower:
+                    sign_en = en
+                    break
+            else:
+                # Если знак не распознан, используем fallback
+                use_fallback = True
+                sign_en = 'aries'
         
         sign_ru = self.SIGN_NAMES_RU.get(sign_en, sign)
         
@@ -219,8 +269,17 @@ class HoroscopeParser:
         
         period_text = period_names.get(horoscope.period, horoscope.period)
         
+        # Находим эмодзи знака
+        sign_key = 'aries'
+        for en, ru in self.SIGN_NAMES_RU.items():
+            if ru.lower() == horoscope.sign.lower():
+                sign_key = en
+                break
+        
+        emoji = self.SIGN_EMOJIS.get(sign_key, '✨')
+        
         result = f"""
-♈ **ГОРОСКОП ДЛЯ ЗНАКА {horoscope.sign.upper()}**
+{emoji} **ГОРОСКОП ДЛЯ ЗНАКА {horoscope.sign.upper()}**
 📅 {period_text.capitalize()}
 
 **Общий прогноз:**
