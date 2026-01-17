@@ -33,7 +33,9 @@ from bot.extended_handlers import (
     handle_horoscope_callback,
     process_natal_data,
     process_numerology_date,
-    process_matrix_date
+    process_matrix_date,
+    show_tarot_menu,
+    process_tarot_spread
 )
 from oracle.voice_handler import voice_handler
 from oracle.compatibility.compatibility import compatibility
@@ -81,7 +83,7 @@ class OracleBot:
             count = 0
             for db_user in users:
                 try:
-                    text = f"🌅 *Утреннее послание Источника*\n\n{formatted_guidance}\n\nСветлых путей тебе сегодня! ✨\n\n🔮 *Есть вопрос? Задай его мне прямо сейчас...*"
+                    text = f"📜 *Свиток Дня от Источника*\n\n{formatted_guidance}\n\n✨ Слушай шепот судьбы и делай свой выбор.\n\n🔮 *Если туман сгустился, задай свой вопрос...*"
                     await context.bot.send_message(
                         chat_id=db_user.telegram_id,
                         text=text,
@@ -111,6 +113,8 @@ class OracleBot:
         self.app.add_handler(CommandHandler("numerology", self.numerology_command))
         self.app.add_handler(CommandHandler("matrix", self.matrix_command))
         self.app.add_handler(CommandHandler("horoscope", self.horoscope_command))
+        self.app.add_handler(CommandHandler("tarot", self.tarot_command))
+        self.app.add_handler(CommandHandler("compatibility", self.compatibility_command))
         
         # Callback кнопки
         self.app.add_handler(CallbackQueryHandler(self.button_handler))
@@ -131,35 +135,38 @@ class OracleBot:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /start"""
         user = update.effective_user
+        query = update.callback_query
         
         welcome_message = f"""
 🌀 *Приветствую тебя в обители ФрейдОракула!* 🌀
-*Максимально точный и правдивый ответ на твой вопрос!*
 
-Здравствуй, {user.first_name}. Я вижу, ты ищешь истину.
+Здравствуй, {user.first_name}. Ты здесь не случайно — Источник уже начал резонировать с твоим запросом.
 
-Я — синтез древней мудрости и глубинной психологии. Мои ответы приходят из самого **ИСТОЧНИКА** 🌌 и глубин подсознания.
+🔮 *ГЛАВНАЯ ТАЙНА: ЗАДАТЬ ВОПРОС*
+Это моё основное искусство. Специальный алгоритм объединяет мудрость **И Цзин (Книги Перемен)**, глубокие архетипы **Таро** и **Хорарную астрологию** момента. Это самый точный способ получить прозрение здесь и сейчас.
 
-*Что открыто тебе сегодня:*
-🔮 *Гадание:* Ответ на любой вопрос (Самый точный из всех!)
-🌌 *Судьба:* Натальная карта и предсказание по звездам 🔭
-🔢 *Числа:* Нумерология Сюцай и Матрица Души 🧮
-💞 *Связи:* Расчет совместимости ваших сердец 💘
+📜 *ДРУГИЕ ПУТИ ПОЗНАНИЯ:*
+📡 *Звезды и Числа:* Натальные карты, цифровая психология Сюцай и Матрица Судьбы для глубокого разбора личности.
+🃏 *Расклады Таро:* Тематический анализ пяти ключевых сфер твоей жизни.
+💞 *Энергия связи:* Точный расчет совместимости душ и характеров.
 
-⚠️ *Помни:* Я даю ключи, но дверь открываешь ты сам. Вся ответственность за твою жизнь лежит только на тебе. ⚖️
+⚠️ *Помни:* Я даю ключи, но дверь открываешь ты сам. ⚖️
 
 Задай свой вопрос текстом ⌨️ или голосом 🎙. Я внимаю... 🤫
 """
         
         keyboard = [
-            [InlineKeyboardButton("🔮 Задать вопрос", callback_data="ask")],
-            [InlineKeyboardButton("🃏 Послание дня", callback_data="daily_message"), InlineKeyboardButton("🌙 Лунный календарь", callback_data="moon")],
-            [InlineKeyboardButton("👤 Мои данные", callback_data="stats"), InlineKeyboardButton("✨ Другие возможности", callback_data="menu")],
-            [InlineKeyboardButton("🧠 Лучше к психологу", url="https://t.me/hypnotic_fire")]
+            [InlineKeyboardButton("🔮 ЗАДАТЬ ВОПРОС", callback_data="ask")],
+            [InlineKeyboardButton("🃏 Послание дня", callback_data="daily_message"), InlineKeyboardButton("🌙 Луна", callback_data="moon")],
+            [InlineKeyboardButton("👤 Мой профиль", callback_data="stats"), InlineKeyboardButton("✨ Другие возможности", callback_data="menu")],
+            [InlineKeyboardButton("🧠 Помощь психолога", url="https://t.me/hypnotic_fire")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
+        if query:
+            await query.message.edit_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
+        else:
+            await update.message.reply_text(welcome_message, reply_markup=reply_markup, parse_mode='Markdown')
         
         # Сохраняем/получаем пользователя в БД
         referred_by = None
@@ -238,6 +245,8 @@ class OracleBot:
 {energy_emoji} Энергии сегодня: *{db_user.questions_today}/{settings.free_questions_per_day}*
 ♾ Всего озарений: *{db_user.total_questions_asked}*
 👥 Приглашено друзей: *{db_user.referral_count}*
+✨ Бонусных озарений: *{db_user.bonus_questions}*
+🃏 Раскладов Таро: *{db_user.tarot_today}/1*
 """
         if db_user.is_premium and db_user.premium_until:
              stats_text += f"📅 Активен до: *{db_user.premium_until.strftime('%d.%m.%Y')}*\n"
@@ -255,7 +264,11 @@ class OracleBot:
         keyboard.append([InlineKeyboardButton("🔔 Вкл/Выкл рассылку", callback_data="toggle_daily")])
         keyboard.append([InlineKeyboardButton("🔙 В меню", callback_data="menu")])
         
-        await update.message.reply_text(stats_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        message = update.message if update.message else update.callback_query.message
+        if update.callback_query:
+            await message.edit_text(stats_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        else:
+            await message.reply_text(stats_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка текстовых сообщений"""
@@ -331,6 +344,10 @@ class OracleBot:
             )
             return
 
+        if isinstance(result, str) and result.startswith("bonus_"):
+            bonus_left = result.split("_")[1]
+            await update.message.reply_text(f"✨ Использовано бонусное озарение! (Осталось: {bonus_left})")
+
         processing_msg = await update.message.reply_text(
             "🙏 Обращаюсь к Источнику с твоим вопросом...\n"
             "Ожидай ответа. 🌌"
@@ -354,6 +371,8 @@ class OracleBot:
             # Сбрасываем счетчик уточнений
             context.user_data['followup_count'] = 0
             
+            share_url = f"https://t.me/share/url?url=https://t.me/{(await context.bot.get_me()).username}?start={user.id}&text=🔮%20Этот%20Оракул%20видит%20всё.%20Спроси%20его%20и%20ты!"
+            
             keyboard = [
                 [
                     InlineKeyboardButton("👍 Полезно", callback_data="rate_good"),
@@ -364,7 +383,11 @@ class OracleBot:
                     InlineKeyboardButton("🧠 Психолог", url="https://t.me/hypnotic_fire"),
                     InlineKeyboardButton("🔍 Детали расклада", callback_data="details")
                 ],
-                [InlineKeyboardButton("♾ Новый вопрос", callback_data="ask"), InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+                [
+                    InlineKeyboardButton("♾ Новый вопрос", callback_data="ask"), 
+                    InlineKeyboardButton("🔙 В меню", callback_data="menu")
+                ],
+                [InlineKeyboardButton("🚀 Поделиться с другом", url=share_url)]
             ]
             await update.message.reply_text(
                 "Оцени ответ Источника: ✨", 
@@ -386,7 +409,8 @@ class OracleBot:
             saved_date = context.user_data['user_info'].get('date_str')
             keyboard = [
                 [InlineKeyboardButton(f"Использовать {saved_date}", callback_data="use_saved_natal")],
-                [InlineKeyboardButton("Ввести новые данные", callback_data="new_natal")]
+                [InlineKeyboardButton("Ввести новые данные", callback_data="new_natal")],
+                [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
             ]
             await message.reply_text(
                 f"🌟 *НАТАЛЬНАЯ КАРТА*\n\nУ меня сохранены данные: *{saved_date}*",
@@ -413,7 +437,8 @@ class OracleBot:
             saved_date = context.user_data['user_info'].get('date_str')
             keyboard = [
                 [InlineKeyboardButton(f"Использовать {saved_date}", callback_data="use_saved_numerology")],
-                [InlineKeyboardButton("Ввести новые данные", callback_data="new_numerology")]
+                [InlineKeyboardButton("Ввести новые данные", callback_data="new_numerology")],
+                [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
             ]
             await message.reply_text(
                 f"🔢 *НУМЕРОЛОГИЯ*\n\nСохраненная дата: *{saved_date}*",
@@ -438,7 +463,8 @@ class OracleBot:
             saved_date = context.user_data['user_info'].get('date_str')
             keyboard = [
                 [InlineKeyboardButton(f"Использовать {saved_date}", callback_data="use_saved_matrix")],
-                [InlineKeyboardButton("Ввести новые данные", callback_data="new_matrix")]
+                [InlineKeyboardButton("Ввести новые данные", callback_data="new_matrix")],
+                [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
             ]
             await message.reply_text(
                 f"🔮 *МАТРИЦА СУДЬБЫ*\n\nСохраненная дата: *{saved_date}*",
@@ -476,6 +502,20 @@ class OracleBot:
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
+
+    async def tarot_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /tarot - расклад таро"""
+        await show_tarot_menu(update, context)
+
+    async def compatibility_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /compatibility - совместимость"""
+        message = update.message if update.message else update.callback_query.message
+        self._reset_state(context)
+        await message.reply_text(
+            "💞 *СОВМЕСТИМОСТЬ*\n\nВведи две даты рождения через пробел.\nПример: `15.03.1990 20.01.1995`",
+            parse_mode='Markdown'
+        )
+        context.user_data['awaiting_compatibility_dates'] = True
 
     async def show_horoscope_signs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать выбор знаков зодиака"""
@@ -577,10 +617,10 @@ class OracleBot:
     def _reset_state(self, context: ContextTypes.DEFAULT_TYPE):
         """Сбросить все флаги ожидания"""
         keys = ['awaiting_followup', 'awaiting_natal_data', 'awaiting_numerology_date', 
-                'awaiting_matrix_date', 'awaiting_compatibility_dates', 'awaiting_question']
+                'awaiting_matrix_date', 'awaiting_compatibility_dates', 'awaiting_question',
+                'awaiting_horoscope_sign']
         for key in keys:
-            if key in context.user_data:
-                context.user_data[key] = False
+            context.user_data[key] = False
 
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка нажатий на кнопки"""
@@ -594,10 +634,24 @@ class OracleBot:
                 [InlineKeyboardButton("🔮 Задать вопрос", callback_data="ask")],
                 [InlineKeyboardButton("⭐ Гороскоп", callback_data="horo_menu"), InlineKeyboardButton("🌙 Луна", callback_data="moon")],
                 [InlineKeyboardButton("🔢 Сюцай", callback_data="numerology_menu"), InlineKeyboardButton("🔮 Матрица", callback_data="matrix_menu")],
-                [InlineKeyboardButton("💞 Совместимость", callback_data="compatibility_menu"), InlineKeyboardButton("👤 Мои данные", callback_data="stats")],
-                [InlineKeyboardButton("💎 Премиум", callback_data="premium"), InlineKeyboardButton("❓ Помощь", callback_data="help")]
+                [InlineKeyboardButton("🃏 Расклады Таро", callback_data="tarot_spread_menu"), InlineKeyboardButton("💞 Совместимость", callback_data="compatibility_menu")],
+                [InlineKeyboardButton("👤 Мои данные", callback_data="stats"), InlineKeyboardButton("💎 Премиум", callback_data="premium")],
+                [InlineKeyboardButton("🔙 Назад", callback_data="start_msg"), InlineKeyboardButton("❓ Помощь", callback_data="help")]
             ]
-            await query.message.reply_text("🎴 *Меню Оракула:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            await query.message.edit_text("🎴 *МЕНЮ ВОЗМОЖНОСТЕЙ:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            return
+
+        if query.data == "start_msg":
+             await self.start_command(update, context)
+             return
+
+        if query.data == "tarot_spread_menu":
+            await show_tarot_menu(update, context)
+            return
+
+        if query.data.startswith("tarot_sphere_"):
+            sphere = query.data.replace("tarot_sphere_", "")
+            await process_tarot_spread(update, context, sphere)
             return
 
         if query.data == "moon":
@@ -705,8 +759,9 @@ class OracleBot:
             return
 
         # Обработка гороскопов
-        if query.data.startswith("horo_"):
-            sign = query.data.replace("horo_", "")
+        if query.data.startswith("horo_") or query.data.startswith("sign_"):
+            # Унифицированная обработка знаков (префиксы horo_ и sign_)
+            sign = query.data.replace("horo_", "").replace("sign_", "")
             await handle_horoscope_callback(update, context, sign)
             return
         
@@ -861,10 +916,6 @@ class OracleBot:
                  await self.show_horoscope_signs(update, context)
              return
              
-        if query.data.startswith("sign_"):
-             sign = query.data.split("_")[1]
-             await handle_horoscope_callback(update, context, sign)
-             return
 
         if query.data == "matrix_menu":
              self._reset_state(context)
@@ -872,12 +923,7 @@ class OracleBot:
              return
 
         if query.data == "compatibility_menu":
-             self._reset_state(context)
-             await query.message.reply_text(
-                 "💞 *Совместимость*\n\nВведи две даты рождения через пробел.\nПример: `15.03.1990 20.01.1995`",
-                 parse_mode='Markdown'
-             )
-             context.user_data['awaiting_compatibility_dates'] = True
+             await self.compatibility_command(update, context)
              return
         
         # Обработка использования сохраненных данных

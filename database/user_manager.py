@@ -23,6 +23,7 @@ class UserManager:
                     referrer = session.query(User).filter(User.telegram_id == referred_by).first()
                     if referrer:
                         referrer.referral_count += 1
+                        referrer.bonus_questions += 3 # Бонус за друга
                 session.commit()
                 session.refresh(db_user)
             return db_user
@@ -51,13 +52,49 @@ class UserManager:
                 return True, user.questions_today
 
             if user.questions_today >= free_limit:
-                return False, "Лимит бесплатных вопросов на сегодня исчерпан."
+                # Проверяем бонусные вопросы
+                if user.bonus_questions > 0:
+                    user.bonus_questions -= 1
+                    user.total_questions_asked += 1
+                    user.last_question_date = datetime.utcnow()
+                    session.commit()
+                    return True, f"bonus_{user.bonus_questions}"
+                
+                return False, "Лимит бесплатных вопросов на сегодня исчерпан. Позови друга или подожди до завтра."
 
             user.questions_today += 1
             user.total_questions_asked += 1
             user.last_question_date = datetime.utcnow()
             session.commit()
             return True, user.questions_today
+        finally:
+            session.close()
+
+    @staticmethod
+    def check_tarot_limit(telegram_id, free_limit=1):
+        session = SessionLocal()
+        try:
+            user = session.query(User).filter(User.telegram_id == telegram_id).first()
+            if not user:
+                return False, "Пользователь не найден"
+
+            today = date.today()
+            if not user.last_tarot_date or user.last_tarot_date.date() < today:
+                user.tarot_today = 0
+                user.last_tarot_date = datetime.utcnow()
+
+            if user.is_premium:
+                user.tarot_today += 1
+                session.commit()
+                return True, user.tarot_today
+
+            if user.tarot_today >= free_limit:
+                return False, "Твое видение на сегодня исчерпано. Возвращайся завтра или получи Premium для безлимитных раскладов."
+
+            user.tarot_today += 1
+            user.last_tarot_date = datetime.utcnow()
+            session.commit()
+            return True, user.tarot_today
         finally:
             session.close()
 

@@ -76,9 +76,20 @@ async def process_natal_data(update: Update, context: ContextTypes.DEFAULT_TYPE,
         # Если указан не Москва, все равно используем Москву (можно расширить)
         # TODO: Добавить геокодинг городов
         
-        # Парсим дату и время
-        day, month, year = map(int, date_str.split('.'))
-        hour, minute = map(int, time_str.split(':'))
+        # Парсим дату и время (более гибко через регулярки)
+        import re
+        date_match = re.search(r'(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})', date_str)
+        time_match = re.search(r'(\d{1,2}):(\d{1,2})', time_str)
+        
+        if not date_match:
+            raise ValueError("Неверный формат даты. Используйте дд.мм.гггг")
+            
+        day, month, year = map(int, date_match.groups())
+        if year < 100: year += 2000 # Для двузначных годов
+        
+        hour, minute = 12, 0
+        if time_match:
+            hour, minute = map(int, time_match.groups())
         
         birth_date = datetime(year, month, day, hour, minute)
         
@@ -163,9 +174,14 @@ async def process_numerology_date(update: Update, context: ContextTypes.DEFAULT_
     message = update.message if update.message else update.callback_query.message
     
     try:
-        # Парсим дату
-        date_str = text.strip()
-        day, month, year = map(int, date_str.split('.'))
+        # Парсим дату более гибко через регулярные выражения
+        import re
+        match = re.search(r'(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})', date_str)
+        if not match:
+            raise ValueError("Неверный формат даты. Используйте дд.мм.гггг")
+            
+        day, month, year = map(int, match.groups())
+        if year < 100: year += 2000
         
         birth_date = datetime(year, month, day)
         
@@ -230,9 +246,15 @@ async def process_matrix_date(update: Update, context: ContextTypes.DEFAULT_TYPE
     message = update.message if update.message else update.callback_query.message
     
     try:
-        # Парсим дату
+        # Парсим дату более гибко
         date_str = text.strip()
-        day, month, year = map(int, date_str.split('.'))
+        import re
+        match = re.search(r'(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})', date_str)
+        if not match:
+            raise ValueError("Неверный формат даты. Используйте дд.мм.гггг")
+            
+        day, month, year = map(int, match.groups())
+        if year < 100: year += 2000
         
         birth_date = datetime(year, month, day)
         
@@ -342,7 +364,7 @@ async def process_compatibility_dates(update: Update, context: ContextTypes.DEFA
         # Парсим 2 даты
         # Формат: 15.03.1990 20.01.1995
         import re
-        dates = re.findall(r'\d{2}\.\d{2}\.\d{4}', text)
+        dates = re.findall(r'(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})', text)
         
         if len(dates) != 2:
             await message.reply_text(
@@ -352,12 +374,16 @@ async def process_compatibility_dates(update: Update, context: ContextTypes.DEFA
             )
             return
             
-        d1_str, d2_str = dates
-        day1, month1, year1 = map(int, d1_str.split('.'))
-        day2, month2, year2 = map(int, d2_str.split('.'))
-        
-        dt1 = datetime(year1, month1, day1)
-        dt2 = datetime(year2, month2, day2)
+        # Формируем объекты datetime
+        parsed_dates = []
+        for d_parts in dates:
+            day, month, year = map(int, d_parts)
+            if year < 100: year += 2000
+            parsed_dates.append(datetime(year, month, day))
+            
+        dt1, dt2 = parsed_dates
+        d1_str = dt1.strftime('%d.%m.%Y')
+        d2_str = dt2.strftime('%d.%m.%Y')
         
         await message.reply_text("💞 Рассчитываю энергии совместимости...")
         
@@ -400,3 +426,97 @@ async def process_compatibility_dates(update: Update, context: ContextTypes.DEFA
             f"❌ Ошибка в данных: {e}\n"
             "Попробуй снова: `дд.мм.гггг дд.мм.гггг`"
         )
+
+
+async def show_tarot_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать меню выбора сферы для расклада Таро"""
+    query = update.callback_query
+    
+    keyboard = [
+        [InlineKeyboardButton("🔮 Свой вопрос", callback_data="ask")],
+        [InlineKeyboardButton("🏥 Здоровье", callback_data="tarot_sphere_health"), InlineKeyboardButton("💼 Карьера", callback_data="tarot_sphere_career")],
+        [InlineKeyboardButton("💞 Любовь", callback_data="tarot_sphere_love"), InlineKeyboardButton("💰 Деньги", callback_data="tarot_sphere_money")],
+        [InlineKeyboardButton("🎯 Предназначение", callback_data="tarot_sphere_purpose")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="menu")]
+    ]
+    
+    text = "🃏 *РАСКЛАД ТАРО «ТРИ КАРТЫ»*\n\nВыбери сферу жизни, которую хочешь осветить сегодня. Оракул вытянет три аркана и прочтет их тайный смысл для тебя."
+    
+    if query:
+        await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+    else:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+
+async def process_tarot_spread(update: Update, context: ContextTypes.DEFAULT_TYPE, sphere: str):
+    """Выполнить расклад Таро (3 карты)"""
+    from oracle.tarot.tarot import tarot
+    from oracle.interpreter import oracle_interpreter
+    import random
+    import copy
+    
+    query = update.callback_query
+    user = update.effective_user
+    db_user = user_manager.get_or_create_user(user)
+    
+    # 1. Проверка лимитов
+    allowed, result = user_manager.check_tarot_limit(user.id)
+    if not allowed:
+        keyboard = [[InlineKeyboardButton("💎 Купить Премиум", callback_data="premium")]]
+        await query.message.reply_text(
+            f"🪫 *Энергия Таро исчерпана*\n\n{result}",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='Markdown'
+        )
+        return
+
+    await query.message.reply_text(f"🃏 Перетасовываю колоду... Обращаюсь к Арканам ({sphere.upper()}).")
+    
+    # 2. Тянем 3 карты (делаем копии чтобы не менять оригиналы в синглтоне)
+    all_cards = list(tarot.deck.cards)
+    selected_cards = random.sample(all_cards, 3)
+    
+    cards = []
+    for c in selected_cards:
+        card_copy = copy.copy(c)
+        card_copy.is_reversed = random.choice([True, False])
+        cards.append(card_copy)
+
+    # 3. Формируем текст расклада
+    cards_display = []
+    for i, c in enumerate(cards):
+        pos = ["Первая карта (Основа)", "Вторая карта (Путь)", "Третья карта (Итог)"][i]
+        cards_display.append(f"📍 *{pos}:*\n{tarot.deck.format_card(c)}")
+    
+    await query.message.reply_text(f"✨ *Твой расклад:*\n\n" + "\n\n".join(cards_display), parse_mode='Markdown')
+    
+    # 4. Интерпретация AI
+    await query.message.reply_text("⏳ Оракул всматривается в образы...")
+    
+    # Подготавливаем данные для AI
+    interpretation = await oracle_interpreter.get_tarot_spread_interpretation(
+        sphere, cards, user.first_name, db_user.is_premium
+    )
+    
+    # 5. Кнопки
+    keyboard = [
+        [InlineKeyboardButton("👍 Полезно", callback_data="rate_good"), InlineKeyboardButton("👎 Не помогло", callback_data="rate_bad")]
+    ]
+    
+    # Кнопка "Подробнее" только для премиума
+    if db_user.is_premium:
+        keyboard.append([InlineKeyboardButton("📜 Узнать подробнее", callback_data="deepen")])
+        # Сохраняем в контекст для "deepen"
+        context.user_data['last_question'] = f"Расклад Таро на сферу: {sphere}"
+        context.user_data['last_oracle_response'] = {
+            'interpretation': interpretation,
+            'tarot_cards': cards
+        }
+    
+    keyboard.append([InlineKeyboardButton("🔙 В меню", callback_data="menu")])
+    
+    await query.message.reply_text(
+        f"📜 *ТВОЙ ПРОГНОЗ:*\n\n{fix_markdown(interpretation)}",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
+    )

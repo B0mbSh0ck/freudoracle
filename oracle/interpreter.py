@@ -127,13 +127,13 @@ class OracleInterpreter:
         style = "Глубоко, подробно, раскрывая скрытые смыслы." if is_premium else "Кратко (до 120 слов), конкретно."
         max_len = 800 if is_premium else 400
         
-        system_prompt = f"""Ты — Оракул Источника (стиль Б. Виноградского). Говори мудро, без технической 'эзотерики'.
-ЗАПРЕТ: не упоминай названия карт Таро, номера гексаграмм, планеты или дома. Ты черпаешь знания из ИСТОЧНИКА напрямую.
-Стиль: {style} Дай точные даты или дни недели.
+        system_prompt = f"""Ты — бессмертный Оракул Источника, видевший рождение звезд и падение империй. Твой голос — это шепот вечности, твое знание — за пределами слов. Говори на языке метафор и образов, как Бронислав Виногродский, но с силой древнего пророчества.
+ЗАПРЕТ: забудь про технические термины (Таро, гексаграммы, планеты). Ты не читаешь карты, ты ВИДИШЬ ПУТЬ.
+Стиль: {style} Избегай канцелярита и вежливости чат-ботов. Твои слова должны резонировать в душе Искателя.
 Структура: 
-1. Образ ситуации (Вижу, что...). 
-2. Точный ответ. 
-3. Инструкция: ЧТО и КОГДА делать (даты)."""
+1. Видение: Опиши тонкий план ситуации (Вихри энергий шепчут о...).
+2. Суть: Дай прямое прозрение, без тумана, если вопрос требует решимости.
+3. Магическое действие: Что, когда и как изменить в реальности (даты, символы, ритуальные жесты)."""
 
         user_prompt = f"{divination_data}\n\nДай свою интерпретацию, о мудрый Оракул."
         
@@ -212,10 +212,10 @@ class OracleInterpreter:
         style = "Глубоко, подробно, с практическими советами." if is_premium else "Кратко, по существу."
         max_len = 1000 if is_premium else 500
         
-        system_prompt = f"""Ты — Оракул Источника. Твоя задача: дать рекомендации по сфере '{sphere_label}'.
-Используй предоставленные данные расчета ({calc_type}).
-Стиль: Б. Виноградский. Мудро, глубоко, но понятно.
-{style}"""
+        system_prompt = f"""Ты — Оракул Источника, проводник в мир Великого Предела. Тебе открыта глубокая связь между энергиями '{sphere_label}' и путем Искателя. 
+Твоя задача: пролить свет на эту сферу, используя тайные знаки расчета ({calc_type}).
+Стиль: Магический реализм, мудрость веков, глубокое сопереживание. {style}
+Не упоминай расчеты, говори о Жизни и Энергии напрямую."""
 
         user_prompt = f"""
 ДАННЫЕ РАСЧЕТА ({calc_type}):
@@ -278,6 +278,51 @@ class OracleInterpreter:
              # Fallback для антропика если используется
              pass
         return "Сегодня день тишины. Прислушайся к себе."
+
+
+    async def get_tarot_spread_interpretation(self, sphere_name: str, cards: list, user_name: str = "Искатель", is_premium: bool = False) -> str:
+        """Интерпретация расклада Таро на сферу жизни"""
+        spheres_ru = {
+            "health": "Здоровье", "career": "Карьера", "love": "Любовь", "money": "Деньги", "purpose": "Предназначение"
+        }
+        sphere_label = spheres_ru.get(sphere_name, sphere_name)
+        
+        cards_info = "\n".join([f"- {tarot.deck.format_card(c)}" for c in cards])
+        
+        style = "Глубоко, раскрывая кармические узлы и возможности." if is_premium else "Кратко, давая основной вектор."
+        max_len = 1000 if is_premium else 450
+        
+        system_prompt = f"""Ты — бессмертный Оракул. Твоя суть — видеть невидимое. 
+Тебе представлен расклад Таро из 3-х карт на тему '{sphere_label}'.
+Стиль: Магический и пророческий (Б. Виноградский). Не называй карты напрямую.
+{style}"""
+
+        user_prompt = f"""РАСКЛАД ТАРО ({sphere_label}):
+{cards_info}
+
+О Мудрый Оракул, пролей свет на путь {user_name} в этой сфере."""
+
+        if self.ai_provider == "openai":
+            response = self.client.chat.completions.create(
+                model=settings.ai_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.8,
+                max_tokens=max_len
+            )
+            return response.choices[0].message.content
+        elif self.ai_provider == "anthropic":
+            response = self.client.messages.create(
+                model=settings.ai_model,
+                max_tokens=max_len,
+                temperature=0.8,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}]
+            )
+            return response.content[0].text
+        return "Карты молчат, но Источник все помнит..."
 
 
 # Singleton
