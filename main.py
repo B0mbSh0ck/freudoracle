@@ -289,7 +289,13 @@ class OracleBot:
             await self.process_followup_question(update, context, update.message.text)
             return
         
-        await self.process_general_question(update, context, update.message.text)
+        text = update.message.text
+        if text and text.lower() in ['отмена', 'cancel', '/cancel']:
+            self._reset_state(context)
+            await update.message.reply_text("🧘 Путь очищен. Возвращаемся в начало.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 В меню", callback_data="menu")]]))
+            return
+
+        await self.process_general_question(update, context, text)
 
     async def process_followup_question(self, update: Update, context: ContextTypes.DEFAULT_TYPE, question: str):
         """Обработка уточняющего вопроса"""
@@ -339,6 +345,10 @@ class OracleBot:
 
     async def process_general_question(self, update: Update, context: ContextTypes.DEFAULT_TYPE, question: str):
         """Единая логика обработки вопроса (текст/голос)"""
+        if not question or not question.strip():
+            await update.message.reply_text("❓ Вопрос пуст. О чём хочешь спросить?")
+            return
+            
         user = update.effective_user
         
         # Проверка лимитов
@@ -757,7 +767,14 @@ class OracleBot:
             calc_data = context.user_data.get('last_calc_data')
             
             if not calc_type or not calc_data:
-                await query.message.reply_text("⚠️ Данные расчета утеряны. Проведи расчет заново.")
+                keyboard = [
+                    [InlineKeyboardButton("🔢 Сюцай", callback_data="numerology_menu"), InlineKeyboardButton("🔮 Матрица", callback_data="matrix_menu")],
+                    [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+                ]
+                await query.message.reply_text(
+                    "⚠️ Данные расчета утеряны (сессия истекла). Чтобы получить разбор по сферам, сначала проведи расчет заново:",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
                 return
             
             await query.message.reply_text("🔮 Обращаюсь к Источнику за подробностями...")

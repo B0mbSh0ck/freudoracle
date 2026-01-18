@@ -467,7 +467,7 @@ async def show_tarot_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🏥 Здоровье", callback_data="tarot_sphere_health"), InlineKeyboardButton("💼 Карьера", callback_data="tarot_sphere_career")],
         [InlineKeyboardButton("💞 Любовь", callback_data="tarot_sphere_love"), InlineKeyboardButton("💰 Деньги", callback_data="tarot_sphere_money")],
         [InlineKeyboardButton("🎯 Предназначение", callback_data="tarot_sphere_purpose")],
-        [InlineKeyboardButton("🔙 Назад", callback_data="menu")]
+        [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
     ]
     
     text = "🃏 *РАСКЛАД ТАРО «ТРИ КАРТЫ»*\n\nВыбери сферу жизни, которую хочешь осветить сегодня. Оракул вытянет три аркана и прочтет их тайный смысл для тебя."
