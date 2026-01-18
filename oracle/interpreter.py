@@ -325,5 +325,55 @@ class OracleInterpreter:
         return "Карты молчат, но Источник все помнит..."
 
 
+    async def interpret_dream(self, dream_text: str, user_name: str = "Искатель", is_premium: bool = False, personal_data: Dict[str, Any] = None) -> str:
+        """Трактовка сна"""
+        
+        style = "Глубоко, многогранно, исследуя коллективное бессознательное." if is_premium or personal_data else "Кратко, по сути самых частых толкований."
+        max_len = 1000 if is_premium or personal_data else 500
+        
+        # Базовая настройка стиля Б. Виноградского
+        system_prompt = f"""Ты — Оракул Снов, видящий сквозь туман ночи. Твоя задача: истолковать сон Искателя.
+Стиль: Бронислав Виноградский. Используй язык метафор, образов и древних соответствий.
+Твой подход:
+1. Синтезируй значения из разных сонников (Миллер, Фрейд, Юнг, Цветков), но выдавай тот результат, который наиболее часто встречается в разных традициях.
+2. Говори о перемещении энергий и внутренних трансформациях.
+{style}"""
+
+        user_prompt = f"СОН ИСКАТЕЛЯ:\n{dream_text}\n\n"
+        
+        if personal_data:
+            user_prompt += f"""
+ДОПОЛНИТЕЛЬНЫЕ КЛЮЧИ СУДЬБЫ ДЛЯ ПОДРОБНОГО АНАЛИЗА:
+- Имя: {user_name}
+- Дата рождения: {personal_data.get('birth_date')}
+- Знак зодиака: {personal_data.get('zodiac_sign')}
+- Нумерология Сюцай: {personal_data.get('sucai')}
+- Лунный день сна: {personal_data.get('lunar_day')} (влияет на вещность сна)
+
+Раскрой этот сон максимально глубоко, учитывая эти личные данные. Объясни, как сон резонирует с Личностью Искателя и текущим моментом."""
+
+        if self.ai_provider == "openai":
+            response = self.client.chat.completions.create(
+                model=settings.ai_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.8,
+                max_tokens=max_len
+            )
+            return response.choices[0].message.content
+        elif self.ai_provider == "anthropic":
+            response = self.client.messages.create(
+                model=settings.ai_model,
+                max_tokens=max_len,
+                temperature=0.8,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}]
+            )
+            return response.content[0].text
+        return "Сновидения ускользают от меня сейчас..."
+
+
 # Singleton
 oracle_interpreter = OracleInterpreter()

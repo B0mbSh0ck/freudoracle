@@ -42,6 +42,11 @@ async def handle_awaiting_data(update: Update, context: ContextTypes.DEFAULT_TYP
     if context.user_data.get('awaiting_compatibility_dates'):
         await process_compatibility_dates(update, context, text)
         return True
+        
+    # Обработка снов
+    if context.user_data.get('awaiting_dream'):
+        await process_dream_interpretation(update, context, text)
+        return True
     
     return False
 
@@ -517,6 +522,92 @@ async def process_tarot_spread(update: Update, context: ContextTypes.DEFAULT_TYP
     
     await query.message.reply_text(
         f"📜 *ТВОЙ ПРОГНОЗ:*\n\n{fix_markdown(interpretation)}",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
+    )
+
+
+async def process_dream_interpretation(update: Update, context: ContextTypes.DEFAULT_TYPE, dream_text: str):
+    """Начальная трактовка сна"""
+    context.user_data['awaiting_dream'] = False
+    message = update.message if update.message else update.callback_query.message
+    user = update.effective_user
+    
+    await message.reply_text("😴 Оракул погружается в твой сон... Обращаюсь к тайным сонникам.")
+    
+    from oracle.interpreter import oracle_interpreter
+    interpretation = await oracle_interpreter.interpret_dream(dream_text, user.first_name)
+    
+    # Сохраняем сон для "подробно"
+    context.user_data['last_dream'] = dream_text
+    
+    keyboard = [
+        [InlineKeyboardButton("📜 Подробно (AI + Личные данные)", callback_data="dream_detailed")],
+        [InlineKeyboardButton("👍 Полезно", callback_data="rate_good"), InlineKeyboardButton("👎 Не помогло", callback_data="rate_bad")],
+        [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+    ]
+    
+    await message.reply_text(
+        f"🌙 *ТРАКТОВКА ТВОЕГО СНА:*\n\n{fix_markdown(interpretation)}",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='Markdown'
+    )
+
+
+async def process_dream_detailed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Подробная трактовка сна с учетом личных данных"""
+    query = update.callback_query
+    user = update.effective_user
+    db_user = user_manager.get_or_create_user(user)
+    
+    # 1. Проверка лимита
+    allowed, message = user_manager.check_dream_detailed_limit(user.id)
+    if not allowed:
+        await query.answer(message, show_alert=True)
+        return
+
+    dream_text = context.user_data.get('last_dream')
+    if not dream_text:
+        await query.message.reply_text("⚠️ Сон утерян. Напиши его еще раз.")
+        return
+
+    await query.message.reply_text("🔮 Глубокое погружение... Совмещаю образы сна с твоей судьбой.")
+    
+    # 2. Собираем личные данные
+    from oracle.horoscope.moon_parser import moon_parser
+    moon_info = await moon_parser.get_moon_info()
+    
+    user_data = user_manager.get_user_data(user.id)
+    sucai_info = ""
+    if user_data and user_data.birth_date:
+        from oracle.numerology.sucai import chinese_numerology
+        sucai = chinese_numerology.calculate_sucai(user_data.birth_date)
+        sucai_info = f"Число Сознания {sucai['consciousness_number']}, Миссия {sucai['mission_number']}"
+
+    personal_data = {
+        'birth_date': user_data.birth_date.strftime('%d.%m.%Y') if user_data and user_data.birth_date else "Не указана",
+        'zodiac_sign': user_data.zodiac_sign if user_data else "Не указан",
+        'sucai': sucai_info,
+        'lunar_day': moon_info.lunar_day if moon_info else "Неизвестно"
+    }
+
+    # 3. AI интерпретация
+    from oracle.interpreter import oracle_interpreter
+    detailed_interpretation = await oracle_interpreter.interpret_dream(dream_text, user.first_name, is_premium=db_user.is_premium, personal_data=personal_data)
+    
+    # 4. Кнопки (с возможностью уточнений)
+    keyboard = [
+        [InlineKeyboardButton("🔍 Уточнить детали", callback_data="ask_details_dream")],
+        [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+    ]
+    
+    # Сохраняем для уточнений
+    context.user_data['last_question'] = f"Трактовка сна: {dream_text}"
+    context.user_data['last_oracle_response'] = {'interpretation': detailed_interpretation}
+    context.user_data['followup_count'] = 0
+
+    await query.message.reply_text(
+        f"🌌 *ГЛУБОКИЙ АНАЛИЗ СНА:*\n\n{fix_markdown(detailed_interpretation)}",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )

@@ -99,6 +99,32 @@ class UserManager:
             session.close()
 
     @staticmethod
+    def check_dream_detailed_limit(telegram_id):
+        session = SessionLocal()
+        try:
+            user = session.query(User).filter(User.telegram_id == telegram_id).first()
+            if not user:
+                return False, "Пользователь не найден"
+
+            if user.is_premium:
+                return True, "Premium access"
+
+            if user.last_dream_detailed_date:
+                from datetime import timedelta
+                if datetime.utcnow() - user.last_dream_detailed_date < timedelta(days=7):
+                    # Еще не прошла неделя
+                    next_date = user.last_dream_detailed_date + timedelta(days=7)
+                    wait_days = (next_date - datetime.utcnow()).days + 1
+                    return False, f"Подробная трактовка доступна 1 раз в неделю. Приходи через {wait_days} дн. или получи Premium для безлимита."
+
+            # Можно делать расчет
+            user.last_dream_detailed_date = datetime.utcnow()
+            session.commit()
+            return True, "Success"
+        finally:
+            session.close()
+
+    @staticmethod
     def save_question(telegram_id, question_text, response_data):
         session = SessionLocal()
         try:

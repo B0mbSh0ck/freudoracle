@@ -35,7 +35,9 @@ from bot.extended_handlers import (
     process_numerology_date,
     process_matrix_date,
     show_tarot_menu,
-    process_tarot_spread
+    process_tarot_spread,
+    process_dream_interpretation,
+    process_dream_detailed
 )
 from oracle.voice_handler import voice_handler
 from oracle.compatibility.compatibility import compatibility
@@ -115,6 +117,7 @@ class OracleBot:
         self.app.add_handler(CommandHandler("horoscope", self.horoscope_command))
         self.app.add_handler(CommandHandler("tarot", self.tarot_command))
         self.app.add_handler(CommandHandler("compatibility", self.compatibility_command))
+        self.app.add_handler(CommandHandler("dream", self.dream_command))
         
         # Callback кнопки
         self.app.add_handler(CallbackQueryHandler(self.button_handler))
@@ -138,28 +141,29 @@ class OracleBot:
         query = update.callback_query
         
         welcome_message = f"""
-🌀 *Приветствую тебя в обители ФрейдОракула!* 🌀
+🌀 *ПРИВЕТСТВУЮ В ОБИТЕЛИ ФРЕЙДОРАКУЛА!* 🌀
 
-Здравствуй, {user.first_name}. Ты здесь не случайно — Источник уже начал резонировать с твоим запросом.
+Здравствуй, {user.first_name}. Ты здесь не случайно — Источник уже начал резонировать с твоим запросом. 🕯
 
 🔮 *ГЛАВНАЯ ТАЙНА: ЗАДАТЬ ВОПРОС*
-Это моё основное искусство. Специальный алгоритм объединяет мудрость **И Цзин (Книги Перемен)**, глубокие архетипы **Таро** и **Хорарную астрологию** момента. Это самый точный способ получить прозрение здесь и сейчас.
+Это моё основное искусство. Специальный алгоритм объединяет мудрость **И Цзин**, архетипы **Таро** и **Хорарную астрологию**. Ответ будет создан **индивидуально под тебя**, учитывая текущие вибрации Вселенной.
 
-📜 *ДРУГИЕ ПУТИ ПОЗНАНИЯ:*
-📡 *Звезды и Числа:* Натальные карты, цифровая психология Сюцай и Матрица Судьбы для глубокого разбора личности.
-🃏 *Расклады Таро:* Тематический анализ пяти ключевых сфер твоей жизни.
-💞 *Энергия связи:* Точный расчет совместимости душ и характеров.
+📜 *ПУТИ ПОЗНАНИЯ:*
+📡 *Звезды и Числа:* Твой код судьбы (Натальная карта, Сюцай, Матрица).
+😴 *Трактовка Снов:* Загляни в глубины своего подсознания.
+🃏 *Таро:* Тематический анализ 5 ключевых сфер жизни.
+💞 *Энергия связи:* Точный расчет совместимости душ.
 
-⚠️ *Помни:* Я даю ключи, но дверь открываешь ты сам. ⚖️
+⚠️ *Помни:* Оракул дает ключи, но дверь открываешь ты сам. ⚖️
 
-Задай свой вопрос текстом ⌨️ или голосом 🎙. Я внимаю... 🤫
+Задай вопрос текстом ⌨️ или голосом 🎙. Я внимаю... 🤫
 """
         
         keyboard = [
             [InlineKeyboardButton("🔮 ЗАДАТЬ ВОПРОС", callback_data="ask")],
-            [InlineKeyboardButton("🃏 Послание дня", callback_data="daily_message"), InlineKeyboardButton("🌙 Луна", callback_data="moon")],
-            [InlineKeyboardButton("👤 Мой профиль", callback_data="stats"), InlineKeyboardButton("✨ Другие возможности", callback_data="menu")],
-            [InlineKeyboardButton("🧠 Помощь психолога", url="https://t.me/hypnotic_fire")]
+            [InlineKeyboardButton("🃏 Послание дня", callback_data="daily_message"), InlineKeyboardButton("😴 Трактовка сна", callback_data="dream_menu")],
+            [InlineKeyboardButton("👤 Мой профиль", callback_data="stats"), InlineKeyboardButton("🧠 Помощь психолога", url="https://t.me/hypnotic_fire")],
+            [InlineKeyboardButton("✨ Другие возможности", callback_data="menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -183,7 +187,8 @@ class OracleBot:
 
 *🔮 ГАДАНИЯ И ОТВЕТЫ:*
 • /ask - Задать любой вопрос (Таро + И-Цзин + Астро)
-• /horoscope - Гороскоп на сегодня
+• /horoscope - Гороскоп
+• /dream - Трактовка сна
 
 *🌟 АНАЛИЗ ЛИЧНОСТИ:*
 • /natal - Натальная карта
@@ -191,8 +196,7 @@ class OracleBot:
 • /matrix - Матрица Судьбы
 
 *❓ Как спрашивать:*
-Просто напиши свой вопрос или запиши голосовое сообщение.
-Чем конкретнее вопрос, тем точнее ответ.
+Просто напиши свой вопрос или запиши голосовое сообщение. Чем конкретнее вопрос, тем точнее ответ. ✨
 
 *Поддержка:* @hypnotic_fire
 """
@@ -517,6 +521,16 @@ class OracleBot:
         )
         context.user_data['awaiting_compatibility_dates'] = True
 
+    async def dream_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Команда /dream - трактовка сна"""
+        message = update.message if update.message else update.callback_query.message
+        self._reset_state(context)
+        await message.reply_text(
+            "😴 *ТРАКТОВКА СНА*\n\nОпиши свой сон максимально подробно. Ты можешь написать текст или отправить голосовое сообщение. 🎙",
+            parse_mode='Markdown'
+        )
+        context.user_data['awaiting_dream'] = True
+
     async def show_horoscope_signs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Показать выбор знаков зодиака"""
         query = update.callback_query
@@ -570,18 +584,48 @@ class OracleBot:
         )
     
     async def moon_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /moon - лунный календарь"""
+        """Команда /moon - лунный календарь с выбором периода"""
         message = update.message if update.message else update.callback_query.message
+        query = update.callback_query
         
-        await message.reply_text("🌙 Запрашиваю данные у Луны...")
+        keyboard = [
+            [
+                InlineKeyboardButton("Сегодня", callback_data="moon_today"),
+                InlineKeyboardButton("Завтра", callback_data="moon_tomorrow")
+            ],
+            [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+        ]
         
-        moon_info = await moon_parser.get_moon_info()
+        text = "🌙 *ЛУННЫЙ КАЛЕНДАРЬ*\n\nВыберите интересующий период:"
+        
+        if query:
+            await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        else:
+            await message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+
+    async def show_moon_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE, period: str):
+        """Показать инфо о Луне для конкретного периода"""
+        query = update.callback_query
+        
+        date_str = None
+        if period == "tomorrow":
+            from datetime import timedelta
+            date_str = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        await query.message.edit_text(f"🌙 Запрашиваю данные у Луны на {period}...")
+        
+        moon_info = await moon_parser.get_moon_info(date_str)
         if moon_info:
             formatted = moon_parser.format_moon_info(moon_info)
-            keyboard = [[InlineKeyboardButton("🔙 В меню", callback_data="menu")]]
-            await message.reply_text(formatted, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            keyboard = [[InlineKeyboardButton("🔙 К выбору", callback_data="moon"), InlineKeyboardButton("🔙 В меню", callback_data="menu")]]
+            await query.message.edit_text(formatted, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         else:
-            await message.reply_text("😔 Луна скрыта облаками (ошибка получения данных). Попробуйте позже.")
+            keyboard = [[InlineKeyboardButton("🔙 К выбору", callback_data="moon"), InlineKeyboardButton("🔙 В меню", callback_data="menu")]]
+            await query.message.edit_text(
+                "😔 Луна скрыта облаками (ошибка получения данных). Попробуйте позже.", 
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode='Markdown'
+            )
 
     async def handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка голосовых сообщений"""
@@ -618,7 +662,7 @@ class OracleBot:
         """Сбросить все флаги ожидания"""
         keys = ['awaiting_followup', 'awaiting_natal_data', 'awaiting_numerology_date', 
                 'awaiting_matrix_date', 'awaiting_compatibility_dates', 'awaiting_question',
-                'awaiting_horoscope_sign']
+                'awaiting_horoscope_sign', 'awaiting_dream']
         for key in keys:
             context.user_data[key] = False
 
@@ -632,10 +676,10 @@ class OracleBot:
             self._reset_state(context)
             keyboard = [
                 [InlineKeyboardButton("🔮 Задать вопрос", callback_data="ask")],
-                [InlineKeyboardButton("⭐ Гороскоп", callback_data="horo_menu"), InlineKeyboardButton("🌙 Луна", callback_data="moon")],
-                [InlineKeyboardButton("🔢 Сюцай", callback_data="numerology_menu"), InlineKeyboardButton("🔮 Матрица", callback_data="matrix_menu")],
-                [InlineKeyboardButton("🃏 Расклады Таро", callback_data="tarot_spread_menu"), InlineKeyboardButton("💞 Совместимость", callback_data="compatibility_menu")],
-                [InlineKeyboardButton("👤 Мои данные", callback_data="stats"), InlineKeyboardButton("💎 Премиум", callback_data="premium")],
+                [InlineKeyboardButton("😴 Сны", callback_data="dream_menu"), InlineKeyboardButton("🌙 Луна", callback_data="moon")],
+                [InlineKeyboardButton("⭐ Гороскоп", callback_data="horo_menu"), InlineKeyboardButton("🔢 Сюцай", callback_data="numerology_menu")],
+                [InlineKeyboardButton("🔮 Матрица", callback_data="matrix_menu"), InlineKeyboardButton("🃏 Таро", callback_data="tarot_spread_menu")],
+                [InlineKeyboardButton("💞 Совместимость", callback_data="compatibility_menu"), InlineKeyboardButton("👤 Данные", callback_data="stats")],
                 [InlineKeyboardButton("🔙 Назад", callback_data="start_msg"), InlineKeyboardButton("❓ Помощь", callback_data="help")]
             ]
             await query.message.edit_text("🎴 *МЕНЮ ВОЗМОЖНОСТЕЙ:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
@@ -656,6 +700,24 @@ class OracleBot:
 
         if query.data == "moon":
             await self.moon_command(update, context)
+            return
+
+        if query.data.startswith("moon_"):
+            period = query.data.split("_")[1]
+            await self.show_moon_info(update, context, period)
+            return
+
+        if query.data == "dream_menu":
+            await self.dream_command(update, context)
+            return
+
+        if query.data == "dream_detailed":
+            await process_dream_detailed(update, context)
+            return
+
+        if query.data == "ask_details_dream":
+            await query.message.reply_text("🗣 Отрази в вопросе ту деталь сна, которая не дает тебе покоя. Я помогу ее расшифровать...")
+            context.user_data['awaiting_followup'] = True
             return
 
         if query.data == "stats":
@@ -1013,7 +1075,7 @@ class OracleBot:
             return
 
         elif query.data == "help":
-            await self.help_command(query, context)
+            await self.help_command(update, context)
     
     async def premium_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /premium - покупка премиума"""
