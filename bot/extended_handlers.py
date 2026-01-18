@@ -188,7 +188,15 @@ async def process_numerology_date(update: Update, context: ContextTypes.DEFAULT_
         day, month, year = map(int, match.groups())
         if year < 100: year += 2000
         
-        birth_date = datetime(year, month, day)
+        try:
+            birth_date = datetime(year, month, day)
+        except ValueError:
+            await message.reply_text(
+                "❌ Такой даты не существует в календаре.\n\n"
+                "Проверьте правильность даты и попробуйте снова.\n"
+                "Формат: дд.мм.гггг"
+            )
+            return
         
         # Рассчитываем числа Сюцай
         await message.reply_text("🔢 Рассчитываю ваши числа судьбы...")
@@ -261,7 +269,15 @@ async def process_matrix_date(update: Update, context: ContextTypes.DEFAULT_TYPE
         day, month, year = map(int, match.groups())
         if year < 100: year += 2000
         
-        birth_date = datetime(year, month, day)
+        try:
+            birth_date = datetime(year, month, day)
+        except ValueError:
+            await message.reply_text(
+                "❌ Такой даты не существует в календаре.\\n\\n"
+                "Проверьте правильность даты и попробуйте снова.\\n"
+                "Формат: дд.мм.гггг"
+            )
+            return
         
         # Рассчитываем матрицу
         await message.reply_text("🔮 Рассчитываю вашу матрицу судьбы...")
@@ -381,10 +397,19 @@ async def process_compatibility_dates(update: Update, context: ContextTypes.DEFA
             
         # Формируем объекты datetime
         parsed_dates = []
-        for d_parts in dates:
+        for idx, d_parts in enumerate(dates, 1):
             day, month, year = map(int, d_parts)
             if year < 100: year += 2000
-            parsed_dates.append(datetime(year, month, day))
+            try:
+                parsed_dates.append(datetime(year, month, day))
+            except ValueError:
+                await message.reply_text(
+                    f"❌ Дата #{idx} невозможна ({day}.{month}.{year}).\\n\\n"
+                    "Проверьте правильность дат и попробуйте снова.\\n"
+                    "Пример: `15.03.1990 20.01.1995`",
+                    parse_mode='Markdown'
+                )
+                return
             
         dt1, dt2 = parsed_dates
         d1_str = dt1.strftime('%d.%m.%Y')

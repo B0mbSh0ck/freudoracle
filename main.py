@@ -163,7 +163,7 @@ class OracleBot:
         keyboard = [
             [InlineKeyboardButton("🔮 ЗАДАТЬ ВОПРОС", callback_data="ask")],
             [InlineKeyboardButton("🃏 Послание дня", callback_data="daily_message"), InlineKeyboardButton("😴 Трактовка сна", callback_data="dream_menu")],
-            [InlineKeyboardButton("👤 Профиль", callback_data="stats"), InlineKeyboardButton("🧠 Психолог", url="https://t.me/hypnotic_fire")],
+            [InlineKeyboardButton("👤 Профиль", callback_data="stats"), InlineKeyboardButton("🧠 Лучше к психологу", url="https://t.me/hypnotic_fire")],
             [InlineKeyboardButton("✨ Другие возможности", callback_data="menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -387,16 +387,15 @@ class OracleBot:
                     InlineKeyboardButton("👍 Полезно", callback_data="rate_good"),
                     InlineKeyboardButton("👎 Не помогло", callback_data="rate_bad")
                 ],
-                [InlineKeyboardButton("🔍 Подробнее", callback_data="ask_details")],
+                [InlineKeyboardButton("🔍 Детали расклада", callback_data="details")],
                 [
-                    InlineKeyboardButton("🧠 Психолог", url="https://t.me/hypnotic_fire"),
-                    InlineKeyboardButton("🔍 Детали расклада", callback_data="details")
+                    InlineKeyboardButton("🧠 Лучше к психологу", url="https://t.me/hypnotic_fire"),
+                    InlineKeyboardButton("♾ Новый вопрос", callback_data="ask")
                 ],
                 [
-                    InlineKeyboardButton("♾ Новый вопрос", callback_data="ask"), 
-                    InlineKeyboardButton("🔙 В меню", callback_data="menu")
-                ],
-                [InlineKeyboardButton("🚀 Поделиться с другом", url=share_url)]
+                    InlineKeyboardButton("🔙 В меню", callback_data="menu"),
+                    InlineKeyboardButton("🚀 Поделиться", url=share_url)
+                ]
             ]
             await update.message.reply_text(
                 "Оцени ответ Источника: ✨", 
@@ -682,7 +681,7 @@ class OracleBot:
             self._reset_state(context)
             keyboard = [
                 [InlineKeyboardButton("🔮 Задать вопрос", callback_data="ask")],
-                [InlineKeyboardButton("😴 Сны", callback_data="dream_menu"), InlineKeyboardButton("🌙 Луна", callback_data="moon")],
+                [InlineKeyboardButton("😴 Сны", callback_data="dream_menu"), InlineKeyboardButton("🌙 Лунный календарь", callback_data="moon")],
                 [InlineKeyboardButton("⭐ Гороскоп", callback_data="horo_menu"), InlineKeyboardButton("🔢 Сюцай", callback_data="numerology_menu")],
                 [InlineKeyboardButton("🔮 Матрица", callback_data="matrix_menu"), InlineKeyboardButton("🃏 Таро", callback_data="tarot_spread_menu")],
                 [InlineKeyboardButton("💞 Совместимость", callback_data="compatibility_menu"), InlineKeyboardButton("👤 Данные", callback_data="stats")],
@@ -847,15 +846,24 @@ class OracleBot:
                 ]
                 await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(action_keyboard))
             else:
-                text = "Похоже, мой ответ не попал в цель.\n\nВ таких ситуациях лучше всего обратиться к профессиональному психологу за живой консультацией:"
-                # Клавиатура действий после отрицательной оценки
+                # НЕ заменяем текст, а отправляем дополнительное сообщение
+                await query.answer("Принято", show_alert=False)
+                # Убираем кнопки оценки
                 action_keyboard = [
+                    [InlineKeyboardButton("🗣 Новый вопрос", callback_data="ask")],
+                    [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+                ]
+                await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(action_keyboard))
+                
+                # Отправляем дополнительное сообщение с рекомендацией
+                text = "Похоже, мой ответ не попал в цель.\n\nВ таких ситуациях лучше всего обратиться к профессиональному психологу за живой консультацией:"
+                keyboard = [
                     [InlineKeyboardButton("🧠 Записаться к психологу", url="https://t.me/hypnotic_fire")],
                     [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
                 ]
-                await query.edit_message_text(
-                    text=text,
-                    reply_markup=InlineKeyboardMarkup(action_keyboard)
+                await query.message.reply_text(
+                    text,
+                    reply_markup=InlineKeyboardMarkup(keyboard)
                 )
             # Логирование
             logger.info(f"User {update.effective_user.id} rated: {query.data}")
@@ -1043,10 +1051,20 @@ class OracleBot:
 
 {oracle_response['horary']['formatted']}
 """
-                await query.message.reply_text(fix_markdown(details), parse_mode='Markdown')
+                keyboard = [
+                    [InlineKeyboardButton("🔍 Уточнить", callback_data="ask_followup")],
+                    [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
+                ]
+                await query.message.reply_text(
+                    fix_markdown(details), 
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
             else:
                 await query.message.reply_text("⚠️ Сначала задай вопрос!")
+            return
         
+        elif query.data == "ask_followup":
             await query.message.reply_text("🗣 Что именно ты хочешь уточнить? Напиши свой вопрос.")
             context.user_data['awaiting_followup'] = True
             return
