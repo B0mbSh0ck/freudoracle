@@ -60,32 +60,35 @@ class MoonParser:
                                 elif "луна в знаке" in label:
                                     sign = value
 
-                    # 2. Общее описание (первый абзац в .moon-day или после таблицы)
-                    # Обычно это краткое резюме дня
-                    main_container = soup.select_one('div.moon-day')
+                    # 2. Общее описание (первый абзац после таблиц)
+                    main_container = soup.select_one('article.moon-day')
                     if main_container:
-                        summary_p = main_container.find('p')
+                        # Ищем первый p, который не внутри таблиц
+                        summary_p = main_container.find('p', recursive=False)
+                        if not summary_p:
+                             # Если не нашли напрямую, ищем любой p в начале
+                             summary_p = main_container.find('p')
                         if summary_p:
                             description = summary_p.get_text(strip=True)
 
-                    # 3. Детальные рекомендации (из блока влияния)
-                    influence_section = soup.select_one('section.moon-today-influence')
-                    if influence_section:
-                        articles = influence_section.find_all('article')
+                    # 3. Детальные рекомендации (из блоков влияния .moon-effect)
+                    influence_sections = soup.select('section.moon-effect')
+                    if influence_sections:
                         recs_list = []
-                        for article in articles:
-                            h3 = article.find('h3')
-                            p = article.find('p')
-                            if h3 and p:
-                                title = h3.get_text(strip=True)
-                                text = p.get_text(strip=True)
-                                # Берем первые 2-3 предложения или ограничиваем длину
-                                if len(text) > 200:
-                                    text = text[:197] + "..."
+                        for section in influence_sections:
+                            h2 = section.find('h2')
+                            p_div = section.select_one('div p')
+                            if h2 and p_div:
+                                title = h2.get_text(strip=True)
+                                text = p_div.get_text(strip=True)
+                                # Ограничиваем длину
+                                if len(text) > 250:
+                                    text = text[:247] + "..."
                                 recs_list.append(f"🔹 *{title}:*\n{text}")
                         
                         if recs_list:
-                            recommendations = "\n\n".join(recs_list[:3]) # Берем первые 3 важных блока
+                            # Берем самые важные (обычно первые 3: сутки, фаза, знак)
+                            recommendations = "\n\n".join(recs_list[:4])
 
                     # Если рекомендаций нет в блоке влияния, пробуем найти другие абзацы
                     if not recommendations and main_container:

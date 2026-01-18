@@ -275,9 +275,9 @@ class OracleBot:
         
         message = update.message if hasattr(update, 'message') and update.message else update.callback_query.message
         if hasattr(update, 'callback_query') and update.callback_query:
-            await message.edit_text(stats_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            await message.edit_text(fix_markdown(stats_text), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         else:
-            await message.reply_text(stats_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            await message.reply_text(fix_markdown(stats_text), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка текстовых сообщений"""
@@ -611,13 +611,13 @@ class OracleBot:
 
         moon_info = await moon_parser.get_moon_info(period)
         
-        keyboard = [
-            [
-                InlineKeyboardButton("Сегодня", callback_data="moon_today"),
-                InlineKeyboardButton("Завтра", callback_data="moon_tomorrow")
-            ],
-            [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
-        ]
+        keyboard = []
+        if period == "today":
+            keyboard.append([InlineKeyboardButton("Завтра", callback_data="moon_tomorrow")])
+        else:
+             keyboard.append([InlineKeyboardButton("Сегодня", callback_data="moon_today")])
+        
+        keyboard.append([InlineKeyboardButton("🔙 В меню", callback_data="menu")])
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         if moon_info:
@@ -839,13 +839,13 @@ class OracleBot:
             is_good = query.data == "rate_good"
             
             if is_good:
-                text = "🙏 Благодарю за отклик."
-                # Клавиатура действий после положительной оценки
+                await query.answer("🙏 Благодарю за отклик!", show_alert=False)
+                # Оставляем текст как есть, просто меняем кнопки
                 action_keyboard = [
-                    [InlineKeyboardButton("📜 Узнать подробнее", callback_data="deepen")],
                     [InlineKeyboardButton("🗣 Новый вопрос", callback_data="ask")],
                     [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
                 ]
+                await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(action_keyboard))
             else:
                 text = "Похоже, мой ответ не попал в цель.\n\nВ таких ситуациях лучше всего обратиться к профессиональному психологу за живой консультацией:"
                 # Клавиатура действий после отрицательной оценки
@@ -853,11 +853,10 @@ class OracleBot:
                     [InlineKeyboardButton("🧠 Записаться к психологу", url="https://t.me/hypnotic_fire")],
                     [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
                 ]
-            
-            await query.edit_message_text(
-                text=text,
-                reply_markup=InlineKeyboardMarkup(action_keyboard)
-            )
+                await query.edit_message_text(
+                    text=text,
+                    reply_markup=InlineKeyboardMarkup(action_keyboard)
+                )
             # Логирование
             logger.info(f"User {update.effective_user.id} rated: {query.data}")
             return
