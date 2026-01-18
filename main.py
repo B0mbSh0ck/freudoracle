@@ -137,6 +137,7 @@ class OracleBot:
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /start"""
+        self._reset_state(context)
         user = update.effective_user
         query = update.callback_query
         
@@ -204,6 +205,7 @@ class OracleBot:
     
     async def ask_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /ask"""
+        self._reset_state(context)
         message = update.message if update.message else update.callback_query.message
         await message.reply_text(
             "🔮 Задай свой вопрос. Я внимательно слушаю...\n\n"
@@ -408,6 +410,7 @@ class OracleBot:
 
     async def natal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /natal - натальная карта"""
+        self._reset_state(context)
         message = update.message if update.message else update.callback_query.message
         if 'user_info' in context.user_data and 'date_str' in context.user_data['user_info']:
             saved_date = context.user_data['user_info'].get('date_str')
@@ -436,6 +439,7 @@ class OracleBot:
     
     async def numerology_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /numerology - нумерология Сюцай"""
+        self._reset_state(context)
         message = update.message if update.message else update.callback_query.message
         if 'user_info' in context.user_data and 'date_str' in context.user_data['user_info']:
             saved_date = context.user_data['user_info'].get('date_str')
@@ -462,6 +466,7 @@ class OracleBot:
     
     async def matrix_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /matrix - матрица судьбы"""
+        self._reset_state(context)
         message = update.message if update.message else update.callback_query.message
         if 'user_info' in context.user_data and 'date_str' in context.user_data['user_info']:
             saved_date = context.user_data['user_info'].get('date_str')
@@ -487,6 +492,7 @@ class OracleBot:
     
     async def horoscope_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /horoscope - выбор периода"""
+        self._reset_state(context)
         message = update.message if update.message else update.callback_query.message
         
         keyboard = [
@@ -509,6 +515,7 @@ class OracleBot:
 
     async def tarot_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /tarot - расклад таро"""
+        self._reset_state(context)
         await show_tarot_menu(update, context)
 
     async def compatibility_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -729,10 +736,6 @@ class OracleBot:
         if query.data == "ask_details_dream":
             await query.message.reply_text("🗣 Отрази в вопросе ту деталь сна, которая не дает тебе покоя. Я помогу ее расшифровать...")
             context.user_data['awaiting_followup'] = True
-            return
-
-        if query.data == "stats":
-            await self.stats_command(update, context)
             return
 
         if query.data.startswith("sphere_"):

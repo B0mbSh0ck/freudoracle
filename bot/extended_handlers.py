@@ -180,7 +180,7 @@ async def process_numerology_date(update: Update, context: ContextTypes.DEFAULT_
     
     try:
         # Парсим дату более гибко через регулярные выражения
-        import re
+        date_str = text.strip()
         match = re.search(r'(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})', date_str)
         if not match:
             raise ValueError("Неверный формат даты. Используйте дд.мм.гггг")
