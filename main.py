@@ -201,15 +201,18 @@ class OracleBot:
 
 *Поддержка:* @hypnotic_fire
 """
-        await message.reply_text(help_text, parse_mode='Markdown')
+        keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="menu")]]
+        await message.reply_text(help_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
     
     async def ask_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /ask"""
         self._reset_state(context)
         message = update.message if update.message else update.callback_query.message
+        keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="menu")]]
         await message.reply_text(
             "🔮 Задай свой вопрос. Я внимательно слушаю...\n\n"
-            "Можешь написать текстом или записать голосовое сообщение."
+            "Можешь написать текстом или записать голосовое сообщение.",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
         # Устанавливаем состояние ожидания вопроса
         context.user_data['awaiting_question'] = True
@@ -532,8 +535,10 @@ class OracleBot:
         """Команда /dream - трактовка сна"""
         message = update.message if update.message else update.callback_query.message
         self._reset_state(context)
+        keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="menu")]]
         await message.reply_text(
             "😴 *ТРАКТОВКА СНА*\n\nОпиши свой сон максимально подробно. Ты можешь написать текст или отправить голосовое сообщение. 🎙",
+            reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
         context.user_data['awaiting_dream'] = True
@@ -591,9 +596,20 @@ class OracleBot:
         )
     
     async def moon_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Команда /moon - лунный календарь с выбором периода"""
-        message = update.message if update.message else update.callback_query.message
+        """Команда /moon - лунный календарь (сразу данные на сегодня)"""
+        await self.show_moon_info(update, context, "today")
+
+    async def show_moon_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE, period: str):
+        """Показать инфо о Луне для конкретного периода"""
         query = update.callback_query
+        message = update.message if update.message else (query.message if query else None)
+        
+        if query:
+            await query.edit_message_text(f"🌙 Запрашиваю данные у Луны на {period}...")
+        else:
+            processing_msg = await message.reply_text(f"🌙 Запрашиваю данные у Луны на {period}...")
+
+        moon_info = await moon_parser.get_moon_info(period)
         
         keyboard = [
             [
@@ -602,37 +618,20 @@ class OracleBot:
             ],
             [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
         ]
-        
-        text = "🌙 *ЛУННЫЙ КАЛЕНДАРЬ*\n\nВыберите интересующий период:"
-        
-        if query:
-            await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
-        else:
-            await message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-    async def show_moon_info(self, update: Update, context: ContextTypes.DEFAULT_TYPE, period: str):
-        """Показать инфо о Луне для конкретного периода"""
-        query = update.callback_query
-        
-        date_str = None
-        if period == "tomorrow":
-            from datetime import timedelta
-            date_str = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
-        
-        await query.message.edit_text(f"🌙 Запрашиваю данные у Луны на {period}...")
-        
-        moon_info = await moon_parser.get_moon_info(date_str)
         if moon_info:
             formatted = moon_parser.format_moon_info(moon_info)
-            keyboard = [[InlineKeyboardButton("🔙 К выбору", callback_data="moon"), InlineKeyboardButton("🔙 В меню", callback_data="menu")]]
-            await query.message.edit_text(formatted, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+            if query:
+                await query.edit_message_text(formatted, reply_markup=reply_markup, parse_mode='Markdown')
+            else:
+                await processing_msg.edit_text(formatted, reply_markup=reply_markup, parse_mode='Markdown')
         else:
-            keyboard = [[InlineKeyboardButton("🔙 К выбору", callback_data="moon"), InlineKeyboardButton("🔙 В меню", callback_data="menu")]]
-            await query.message.edit_text(
-                "😔 Луна скрыта облаками (ошибка получения данных). Попробуйте позже.", 
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='Markdown'
-            )
+            err_text = "😔 Луна скрыта облаками (ошибка получения данных). Попробуйте позже."
+            if query:
+                await query.edit_message_text(err_text, reply_markup=reply_markup, parse_mode='Markdown')
+            else:
+                await processing_msg.edit_text(err_text, reply_markup=reply_markup, parse_mode='Markdown')
 
     async def handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка голосовых сообщений"""
@@ -825,13 +824,7 @@ class OracleBot:
              return
 
         if query.data == "ask":
-            self._reset_state(context)
-            await query.message.reply_text(
-                "🗣 *Я слушаю...*\n\nНапиши свой вопрос или отправь голосовое сообщение. 🎙",
-                parse_mode='Markdown'
-            )
-            # Устанавливаем состояние ожидания вопроса
-            context.user_data['awaiting_question'] = True
+            await self.ask_command(update, context)
             return
 
         # Обработка гороскопов
@@ -908,9 +901,6 @@ class OracleBot:
             return
 
 
-        if query.data == "premium":
-            await self.premium_command(update, context)
-            return
 
         if query.data == "buy_premium":
             # Отправка инвойса на Telegram Stars
@@ -1079,25 +1069,7 @@ class OracleBot:
                 session.close()
             return
 
-        elif query.data == "premium":
-            await self.premium_command(update, context)
-            return
 
-        elif query.data == "deepen":
-            # Вынесено из старого блока, чтобы работало везде
-            if 'last_oracle_response' in context.user_data:
-                await query.message.reply_text("📜 Вглядываюсь в глубину...")
-                question = context.user_data.get('last_question', '')
-                oracle_response = context.user_data['last_oracle_response']
-                deep_analysis = await oracle_interpreter.generate_followup_response(
-                    question, 
-                    "Раскрой детали подробнее. Что именно ты увидел в Источнике? Объясни образы.", 
-                    oracle_response
-                )
-                await query.message.reply_text(fix_markdown(deep_analysis), parse_mode='Markdown')
-            else:
-                await query.message.reply_text("⚠️ Контекст утерян. Задай новый вопрос.")
-            return
 
         # Обработка специальных кнопок завершена (stats, help и т.д. вынесены вверх)
     

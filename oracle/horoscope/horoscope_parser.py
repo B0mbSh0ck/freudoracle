@@ -146,7 +146,7 @@ class HoroscopeParser:
         
         # Нормализуем знак
         sign_lower = sign.lower()
-        sign_en = 'aries' # default
+        sign_en = None
 
         if sign_lower in self.ZODIAC_SIGNS:
             sign_en = self.ZODIAC_SIGNS[sign_lower]
@@ -158,10 +158,11 @@ class HoroscopeParser:
                 if ru.lower() == sign_lower:
                     sign_en = en
                     break
-            else:
-                # Если знак не распознан, используем fallback
-                use_fallback = True
-                sign_en = 'aries'
+        
+        if not sign_en:
+            # Если знак не распознан, используем fallback или возвращаем ошибку
+            use_fallback = True
+            sign_en = 'aries' # Fallback только для генерации текста если уж совсем никак
         
         sign_ru = self.SIGN_NAMES_RU.get(sign_en, sign)
         

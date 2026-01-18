@@ -17,76 +17,82 @@ class MoonInfo:
     recommendations: str
 
 class MoonParser:
-    """Парсер лунного календаря"""
+    """Парсер лунного календаря с my-calend.ru"""
     
+    BASE_URL = "https://my-calend.ru/moon"
+
     async def get_moon_info(self, date_str: str = None) -> Optional[MoonInfo]:
         """
         Получить информацию о Луне.
-        date_str: формат 'YYYY-MM-DD' для конкретной даты
+        date_str: 'today', 'tomorrow' или 'yesterday' (или None для сегодня)
         """
-        # Базовый URL. horo.mail.ru/moon/ обычно редиректит на актуальную страницу
-        url = "https://horo.mail.ru/moon/"
-        if date_str:
-            url = f"{url}{date_str}/"
+        period = date_str if date_str in ['today', 'tomorrow', 'yesterday'] else 'today'
+        url = f"{self.BASE_URL}/{period}"
             
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=10) as response:
+                async with session.get(url, timeout=15) as response:
                     if response.status != 200:
-                        # Попробуем альтернативный URL если основной не сработал
-                        if not date_str:
-                            url = "https://horo.mail.ru/moon-calendar/"
-                            async with session.get(url, timeout=10) as resp2:
-                                if resp2.status == 200:
-                                    html = await resp2.text()
-                                else:
-                                    return None
-                        else:
-                            return None
-                    else:
-                        html = await response.text()
+                        return None
                     
+                    html = await response.text()
                     soup = BeautifulSoup(html, 'html.parser')
                     
-                    # Ищем данные более гибко (по ключевым словам)
                     lunar_day = "Неизвестно"
                     phase = "Неизвестно"
                     sign = "Неизвестно"
                     description = ""
                     recommendations = ""
 
-                    # Пытаемся найти специфические блоки или текст
-                    # Лунный день обычно содержит "лунный день" или "лунные сутки"
-                    day_elem = soup.find(lambda tag: tag.name in ['div', 'p', 'b'] and ("лунный день" in tag.text.lower() or "лунные сутки" in tag.text.lower()))
-                    if day_elem:
-                        lunar_day = day_elem.get_text(strip=True)[:100] # Ограничим длину
+                    # 1. Извлекаем основные данные из таблицы .moon-day-info-2
+                    info_table = soup.select_one('table.moon-day-info-2')
+                    if info_table:
+                        for row in info_table.find_all('tr'):
+                            cells = row.find_all('td')
+                            if len(cells) >= 2:
+                                label = cells[0].get_text(strip=True).lower()
+                                value = cells[1].get_text(strip=True)
+                                
+                                if "лунные сутки" in label:
+                                    lunar_day = value
+                                elif "фаза луны" in label:
+                                    phase = value
+                                elif "луна в знаке" in label:
+                                    sign = value
 
-                    # Фаза
-                    phase_elem = soup.find(lambda tag: tag.name in ['div', 'p', 'b'] and any(p in tag.text.lower() for p in ["фаза", "луна растет", "луна убывает", "новолуние", "полнолуние"]))
-                    if phase_elem:
-                        phase = phase_elem.get_text(strip=True)[:100]
+                    # 2. Общее описание (первый абзац в .moon-day или после таблицы)
+                    # Обычно это краткое резюме дня
+                    main_container = soup.select_one('div.moon-day')
+                    if main_container:
+                        summary_p = main_container.find('p')
+                        if summary_p:
+                            description = summary_p.get_text(strip=True)
 
-                    # Знак
-                    sign_elem = soup.find(lambda tag: tag.name in ['div', 'p', 'b', 'a'] and ("луна в знаке" in tag.text.lower() or "луна в созвездии" in tag.text.lower()))
-                    if sign_elem:
-                        sign = sign_elem.get_text(strip=True).replace("Луна в знаке", "").replace("Луна в созвездии", "").strip()[:50]
+                    # 3. Детальные рекомендации (из блока влияния)
+                    influence_section = soup.select_one('section.moon-today-influence')
+                    if influence_section:
+                        articles = influence_section.find_all('article')
+                        recs_list = []
+                        for article in articles:
+                            h3 = article.find('h3')
+                            p = article.find('p')
+                            if h3 and p:
+                                title = h3.get_text(strip=True)
+                                text = p.get_text(strip=True)
+                                # Берем первые 2-3 предложения или ограничиваем длину
+                                if len(text) > 200:
+                                    text = text[:197] + "..."
+                                recs_list.append(f"🔹 *{title}:*\n{text}")
+                        
+                        if recs_list:
+                            recommendations = "\n\n".join(recs_list[:3]) # Берем первые 3 важных блока
 
-                    # Текстовое описание
-                    text_blocks = soup.find_all('p', class_='article__text')
-                    if not text_blocks:
-                         text_blocks = soup.find_all('div', class_='article__item__text')
-                    
-                    # Если все еще пусто, ищем просто абзацы в основном контенте
-                    if not text_blocks:
-                        content = soup.find('div', {'article-item-type': 'html'})
-                        if content:
-                            text_blocks = content.find_all('p')
+                    # Если рекомендаций нет в блоке влияния, пробуем найти другие абзацы
+                    if not recommendations and main_container:
+                        all_ps = main_container.find_all('p')
+                        if len(all_ps) > 1:
+                            recommendations = all_ps[1].get_text(strip=True)
 
-                    if text_blocks:
-                        description = text_blocks[0].get_text(strip=True)
-                        if len(text_blocks) > 1:
-                            recommendations = ' '.join([b.get_text(strip=True) for b in text_blocks[1:3]])
-                    
                     return MoonInfo(
                         lunar_day=lunar_day,
                         phase=phase,
@@ -102,19 +108,19 @@ class MoonParser:
     def format_moon_info(self, moon: MoonInfo) -> str:
         """Форматировать информацию о Луне для Telegram"""
         return f"""
-🌙 *ЛУННЫЙ КАЛЕНДАРЬ НА СЕГОДНЯ*
+🌙 *ЛУННЫЙ КАЛЕНДАРЬ*
 
 🗓 *{moon.lunar_day}*
 🌕 Фаза: *{moon.phase}*
 ♈ Луна в знаке: *{moon.sign}*
 
 📖 *Общее влияние:*
-{moon.description}
+_{moon.description}_
 
-💡 *Рекомендации:*
+💡 *Детальный прогноз:*
 {moon.recommendations}
 
-_Источник: horo.mail.ru_
+_Источник: my-calend.ru_
 """
 
 moon_parser = MoonParser()
