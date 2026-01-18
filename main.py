@@ -162,7 +162,7 @@ class OracleBot:
         keyboard = [
             [InlineKeyboardButton("🔮 ЗАДАТЬ ВОПРОС", callback_data="ask")],
             [InlineKeyboardButton("🃏 Послание дня", callback_data="daily_message"), InlineKeyboardButton("😴 Трактовка сна", callback_data="dream_menu")],
-            [InlineKeyboardButton("👤 Мой профиль", callback_data="stats"), InlineKeyboardButton("🧠 Помощь психолога", url="https://t.me/hypnotic_fire")],
+            [InlineKeyboardButton("👤 Профиль", callback_data="stats"), InlineKeyboardButton("🧠 Психолог", url="https://t.me/hypnotic_fire")],
             [InlineKeyboardButton("✨ Другие возможности", callback_data="menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -268,8 +268,8 @@ class OracleBot:
         keyboard.append([InlineKeyboardButton("🔔 Вкл/Выкл рассылку", callback_data="toggle_daily")])
         keyboard.append([InlineKeyboardButton("🔙 В меню", callback_data="menu")])
         
-        message = update.message if update.message else update.callback_query.message
-        if update.callback_query:
+        message = update.message if hasattr(update, 'message') and update.message else update.callback_query.message
+        if hasattr(update, 'callback_query') and update.callback_query:
             await message.edit_text(stats_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
         else:
             await message.reply_text(stats_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
@@ -671,7 +671,7 @@ class OracleBot:
         query = update.callback_query
         await query.answer()
         
-        # Обработка меню
+        # Эти команды должны быть ПЕРВЫМИ, чтобы не попадать в startswith условия ниже
         if query.data == "menu":
             self._reset_state(context)
             keyboard = [
@@ -685,7 +685,18 @@ class OracleBot:
             await query.message.edit_text("🎴 *МЕНЮ ВОЗМОЖНОСТЕЙ:*", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
             return
 
+        if query.data == "stats":
+            self._reset_state(context)
+            await self.stats_command(update, context)
+            return
+
+        if query.data == "help":
+            self._reset_state(context)
+            await self.help_command(update, context)
+            return
+
         if query.data == "start_msg":
+             self._reset_state(context)
              await self.start_command(update, context)
              return
 
@@ -1044,22 +1055,13 @@ class OracleBot:
             else:
                 await query.message.reply_text("⚠️ Сначала задай вопрос!")
         
-        elif query.data == "ask_details":
-            # Проверяем лимит перед тем как просить ввести вопрос
-            count = context.user_data.get('followup_count', 0)
-            if count >= 2:
-                keyboard = [[InlineKeyboardButton("♾ Новый вопрос", callback_data="ask")]]
-                await query.message.reply_text(
-                    "✋ Лимит уточнений исчерпан. Я сказал всё, что нужно было услышать. Задай новый вопрос.",
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
-                return
-                
             await query.message.reply_text("🗣 Что именно ты хочешь уточнить? Напиши свой вопрос.")
             context.user_data['awaiting_followup'] = True
             return
 
         elif query.data == "toggle_daily":
+            from database.database import SessionLocal
+            from database.models import User
             session = SessionLocal()
             try:
                 db_user = session.query(User).filter(User.telegram_id == query.from_user.id).first()
@@ -1069,13 +1071,32 @@ class OracleBot:
                     status = "включена" if db_user.daily_prediction_enabled else "выключена"
                     await query.answer(f"Рассылка {status}!", show_alert=True)
                     # Обновляем сообщение статов
-                    await self.stats_command(query, context)
+                    await self.stats_command(update, context)
             finally:
                 session.close()
             return
 
-        elif query.data == "help":
-            await self.help_command(update, context)
+        elif query.data == "premium":
+            await self.premium_command(update, context)
+            return
+
+        elif query.data == "deepen":
+            # Вынесено из старого блока, чтобы работало везде
+            if 'last_oracle_response' in context.user_data:
+                await query.message.reply_text("📜 Вглядываюсь в глубину...")
+                question = context.user_data.get('last_question', '')
+                oracle_response = context.user_data['last_oracle_response']
+                deep_analysis = await oracle_interpreter.generate_followup_response(
+                    question, 
+                    "Раскрой детали подробнее. Что именно ты увидел в Источнике? Объясни образы.", 
+                    oracle_response
+                )
+                await query.message.reply_text(fix_markdown(deep_analysis), parse_mode='Markdown')
+            else:
+                await query.message.reply_text("⚠️ Контекст утерян. Задай новый вопрос.")
+            return
+
+        # Обработка специальных кнопок завершена (stats, help и т.д. вынесены вверх)
     
     async def premium_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /premium - покупка премиума"""
