@@ -622,9 +622,9 @@ class OracleBot:
         
         keyboard = []
         if period == "today":
-            keyboard.append([InlineKeyboardButton("Завтра", callback_data="moon_tomorrow")])
+            keyboard.append([InlineKeyboardButton("📅 Завтра", callback_data="moon_tomorrow")])
         else:
-             keyboard.append([InlineKeyboardButton("Сегодня", callback_data="moon_today")])
+             keyboard.append([InlineKeyboardButton("📅 Сегодня", callback_data="moon_today")])
         
         keyboard.append([InlineKeyboardButton("🔙 В меню", callback_data="menu")])
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -875,7 +875,7 @@ class OracleBot:
                 # Отправляем дополнительное сообщение с рекомендацией
                 text = "Похоже, мой ответ не попал в цель.\n\nВ таких ситуациях лучше всего обратиться к профессиональному психологу за живой консультацией:"
                 keyboard = [
-                    [InlineKeyboardButton("🧠 Записаться к психологу", url="https://t.me/hypnotic_fire")],
+                    [InlineKeyboardButton("🧠 Лучше к психологу", url="https://t.me/hypnotic_fire")],
                     [InlineKeyboardButton("🔙 В меню", callback_data="menu")]
                 ]
                 await query.message.reply_text(
