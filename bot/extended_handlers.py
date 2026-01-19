@@ -342,8 +342,13 @@ async def process_matrix_date(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_horoscope_callback(update: Update, context: ContextTypes.DEFAULT_TYPE, sign: str):
     """Обработка выбора знака зодиака для гороскопа"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     query = update.callback_query
     await query.answer()
+    
+    logger.info(f"handle_horoscope_callback called with sign: {sign}")
     
     try:
         # Получаем период из контекста (по умолчанию сегодня)

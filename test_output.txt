@@ -1,0 +1,184 @@
+﻿.\venv\Scripts\python.exe : 2026-01-18 19:41:03.581
+ | INFO     | main:_setup_jobs:64 - Daily mailing j
+ob scheduled at 06:00 UTC
+строка:1 знак:1
++ .\venv\Scripts\python.exe client_simulation_test.
+py 2>&1 | Out-File - ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026- 
+   01-18 19:4...ed at 06:00 UTC:String) [], Remot  
+  eException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+E2026-01-18 19:41:04.133 | INFO     | main:_setup_j
+obs:64 - Daily mailing job scheduled at 06:00 UTC
+E2026-01-18 19:41:04.652 | INFO     | main:_setup_j
+obs:64 - Daily mailing job scheduled at 06:00 UTC
+E2026-01-18 19:41:05.170 | INFO     | main:_setup_j
+obs:64 - Daily mailing job scheduled at 06:00 UTC
+E
+===================================================
+===================
+ERROR: test_scenario_cancel_command (__main__.BotCl
+ientSimulation.test_scenario_cancel_command)
+╚╥┼╨└╓╚▀ 3: ╥хёЄ ъюьрэф√ /cancel
+---------------------------------------------------
+-------------------
+Traceback (most recent call last):
+  File "C:\Python312\Lib\unittest\async_case.py", l
+ine 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python312\Lib\unittest\async_case.py", l
+ine 112, in _callMaybeAsync
+    return self._asyncioRunner.run(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python312\Lib\asyncio\runners.py", line 
+118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python312\Lib\asyncio\base_events.py", l
+ine 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\LENOVO\555\orc\client_simulation_t
+est.py", line 86, in test_scenario_cancel_command
+    print("\u2705 ╩юьрэфр /cancel єёях°эю ёсЁюёшыр 
+ёюёЄю эшх.")
+  File "C:\Python312\Lib\encodings\cp1251.py", line
+ 19, in encode
+    return codecs.charmap_encode(input,self.errors,
+encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode ch
+aracter '\u2705' in position 0: character maps to <
+undefined>
+
+===================================================
+===================
+ERROR: test_scenario_empty_question (__main__.BotCl
+ientSimulation.test_scenario_empty_question)
+╚╥┼╨└╓╚▀ 2: ╥хёЄ эр яєёЄющ тюяЁюё
+---------------------------------------------------
+-------------------
+Traceback (most recent call last):
+  File "C:\Python312\Lib\unittest\async_case.py", l
+ine 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python312\Lib\unittest\async_case.py", l
+ine 112, in _callMaybeAsync
+    return self._asyncioRunner.run(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python312\Lib\asyncio\runners.py", line 
+118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python312\Lib\asyncio\base_events.py", l
+ine 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\LENOVO\555\orc\client_simulation_t
+est.py", line 70, in test_scenario_empty_question
+    print("\u2705 ┴юЄ чрсыюъшЁютры яєёЄющ ттюф.")
+  File "C:\Python312\Lib\encodings\cp1251.py", line
+ 19, in encode
+    return codecs.charmap_encode(input,self.errors,
+encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode ch
+aracter '\u2705' in position 0: character maps to <
+undefined>
+
+===================================================
+===================
+ERROR: test_scenario_invalid_date_numerology (__mai
+n__.BotClientSimulation.test_scenario_invalid_date_
+numerology)
+╚╥┼╨└╓╚▀ 1: ╥хёЄ эр ттюф эхёє∙хёЄтє■∙хщ фрЄ√ (31.02
+)
+---------------------------------------------------
+-------------------
+Traceback (most recent call last):
+  File "C:\Python312\Lib\unittest\async_case.py", l
+ine 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python312\Lib\unittest\async_case.py", l
+ine 112, in _callMaybeAsync
+    return self._asyncioRunner.run(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python312\Lib\asyncio\runners.py", line 
+118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python312\Lib\asyncio\base_events.py", l
+ine 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\LENOVO\555\orc\client_simulation_t
+est.py", line 57, in test_scenario_invalid_date_num
+erology
+    print("\u2705 ┴юЄ яющьры ю°шсъє фрЄ√ ш юЄтхЄшы 
+яюы№чютрЄхы■.")
+  File "C:\Python312\Lib\encodings\cp1251.py", line
+ 19, in encode
+    return codecs.charmap_encode(input,self.errors,
+encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode ch
+aracter '\u2705' in position 0: character maps to <
+undefined>
+
+===================================================
+===================
+ERROR: test_scenario_session_expired (__main__.BotC
+lientSimulation.test_scenario_session_expired)
+╚╥┼╨└╓╚▀ 4: ╥хёЄ эр яЁюЄєї°є■ ёхёёш■ (эрцрЄшх ъэюяъ
+ш шч ёЄрЁюую ёююс∙хэш )
+---------------------------------------------------
+-------------------
+Traceback (most recent call last):
+  File "C:\Python312\Lib\unittest\async_case.py", l
+ine 90, in _callTestMethod
+    if self._callMaybeAsync(method) is not None:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python312\Lib\unittest\async_case.py", l
+ine 112, in _callMaybeAsync
+    return self._asyncioRunner.run(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python312\Lib\asyncio\runners.py", line 
+118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python312\Lib\asyncio\base_events.py", l
+ine 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "C:\Users\LENOVO\555\orc\client_simulation_t
+est.py", line 96, in test_scenario_session_expired
+    await self.bot.button_handler(self.update, self
+.context)
+  File "C:\Users\LENOVO\555\orc\main.py", line 687,
+ in button_handler
+    await query.answer()
+TypeError: object MagicMock can't be used in 'await
+' expression
+
+---------------------------------------------------
+-------------------
+Ran 4 tests in 2.119s
+
+FAILED (errors=4)
+
+--- ╥хёЄ: ╩юьрэфр /cancel ---
+
+--- ╥хёЄ: ╧єёЄющ тюяЁюё ---
+
+--- ╥хёЄ: ═хёє∙хёЄтє■∙р  фрЄр (31.02) ---
+
+--- ╥хёЄ: ╚ёЄхъ°р  ёхёёш  ---

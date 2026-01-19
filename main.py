@@ -374,7 +374,12 @@ class OracleBot:
         
         try:
             db_user = user_manager.get_or_create_user(user)
+            logger.info(f"Processing question for user {user.id}: {question[:50]}...")
+            
             oracle_response = await oracle_interpreter.process_question(question, user.first_name, is_premium=db_user.is_premium)
+            
+            if not oracle_response:
+                raise ValueError("Oracle returned empty response")
             
             context.user_data['last_question'] = question
             context.user_data['last_oracle_response'] = oracle_response
@@ -684,7 +689,10 @@ class OracleBot:
     async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка нажатий на кнопки"""
         query = update.callback_query
-        await query.answer()
+        try:
+            await query.answer()
+        except Exception as e:
+            logger.warning(f"Callback answer failed: {e}")
         
         # Эти команды должны быть ПЕРВЫМИ, чтобы не попадать в startswith условия ниже
         if query.data == "menu":
@@ -725,6 +733,7 @@ class OracleBot:
             return
 
         if query.data == "moon":
+            self._reset_state(context)
             await self.moon_command(update, context)
             return
 
@@ -734,6 +743,7 @@ class OracleBot:
             return
 
         if query.data == "dream_menu":
+            self._reset_state(context)
             await self.dream_command(update, context)
             return
 
@@ -997,6 +1007,7 @@ class OracleBot:
                  bd = user_info['birth_date']
                  user_sign_en = horoscope_parser.get_sign_from_date(bd.day, bd.month)
                  user_sign_ru = horoscope_parser.SIGN_NAMES_RU.get(user_sign_en)
+                 logger.info(f"Horoscope: Found birth_date {bd}, calculated sign: {user_sign_en} ({user_sign_ru})")
              
              if user_sign_ru:
                  # Если знак известен, сразу показываем гороскоп
