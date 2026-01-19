@@ -62,8 +62,8 @@ class OracleInterpreter:
         
         # Если включен Groq, но модель от OpenAI -> меняем на Llama
         if getattr(self, 'is_groq', False) and self.model.startswith("gpt"):
-             print(f"⚠️ Switching model {self.model} -> llama3-70b-8192 (Groq compatible)")
-             self.model = "llama3-70b-8192"
+             print(f"⚠️ Switching model {self.model} -> llama-3.3-70b-versatile (Groq compatible)")
+             self.model = "llama-3.3-70b-versatile"
 
     
     async def process_question(self, question: str, user_name: str = "Искатель", is_premium: bool = False) -> Dict[str, Any]:
