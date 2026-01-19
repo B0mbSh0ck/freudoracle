@@ -89,42 +89,94 @@ class OracleInterpreter:
         Returns:
             Словарь с результатами гадания и интерпретацией
         """
-        # 1. И-Цзин - бросаем монеты
-        primary_hex, secondary_hex = iching.cast_coins()
-        
-        # 2. Таро - карта дня
-        tarot_card = tarot.card_of_the_day()
-        
-        # 3. Хорарная астрология
-        now = datetime.now()
-        horary_chart = horary.calculate_chart(now)
-        
-        # 4. Формируем промпт для AI
-        divination_data = self._format_divination_data(
-            question, primary_hex, secondary_hex, tarot_card, horary_chart
-        )
-        
-        # 5. Получаем интерпретацию от AI
-        ai_interpretation = await self._get_ai_interpretation(question, divination_data, user_name, is_premium)
-        
-        return {
-            'question': question,
-            'timestamp': now,
-            'iching': {
-                'primary': primary_hex,
-                'secondary': secondary_hex,
-                'formatted': iching.format_hexagram(primary_hex)
-            },
-            'tarot': {
-                'card': tarot_card,
-                'formatted': tarot.deck.format_card(tarot_card)
-            },
-            'horary': {
-                'chart': horary_chart,
-                'formatted': horary.format_chart(horary_chart)
-            },
-            'interpretation': ai_interpretation
-        }
+        try:
+            print(f"DEBUG: Starting process_question for {user_name}")
+            
+            # 1. И-Цзин - бросаем монеты
+            print("DEBUG: Step 1 - Iching casting...")
+            try:
+                primary_hex, secondary_hex = iching.cast_coins()
+                print(f"DEBUG: Iching done (Hex {primary_hex.number})")
+            except Exception as e:
+                print(f"❌ DEBUG: Iching failed: {e}")
+                # We can potentially continue even if Iching fails, but for now let's re-raise
+                # To be robust, one could set dummy values here.
+                raise e
+            
+            # 2. Таро - карта дня
+            print("DEBUG: Step 2 - Tarot drawing...")
+            try:
+                tarot_card = tarot.card_of_the_day()
+                print(f"DEBUG: Tarot done ({tarot_card.name})")
+            except Exception as e:
+                print(f"❌ DEBUG: Tarot failed: {e}")
+                raise e
+            
+            # 3. Хорарная астрология
+            print("DEBUG: Step 3 - Horary casting...")
+            horary_chart = None
+            try:
+                now = datetime.now()
+                # Use a safeguard for horary as it relies on external C library/files
+                if hasattr(horary, 'calculate_chart'):
+                     horary_chart = horary.calculate_chart(now)
+                     print("DEBUG: Horary done")
+                else:
+                     print("DEBUG: Horary module seems incomplete, skipping.")
+            except Exception as e:
+                 print(f"❌ DEBUG: Horary failed: {e}")
+                 print("⚠️ Proceeding without Horary chart due to error.")
+                 # Fail-open: create a dummy chart or just pass None if handled downstream
+                 # For now, let's allow it to be None and handle it in formatting
+            
+            # 4. Формируем промпт для AI
+            print("DEBUG: Step 4 - Prompt construction...")
+            # Handle potential None in horary_chart if we failed open
+            if horary_chart:
+                 divination_data = self._format_divination_data(
+                    question, primary_hex, secondary_hex, tarot_card, horary_chart
+                 )
+            else:
+                 # Manually construct prompt without horary
+                 divination_data = f"""
+                 1. Гексаграмма И-Цзин: {primary_hex.number} ({primary_hex.name})
+                 {primary_hex.description}
+                 
+                 2. Карта Таро: {tarot_card.name} ({tarot_card.position})
+                 {tarot_card.meaning}
+                 
+                 3. Хорарная карта: Не удалось построить (техническая заминка).
+                 """
+            
+            # 5. Получаем интерпретацию от AI
+            print(f"DEBUG: Step 5 - AI Inference ({self.ai_provider})...")
+            ai_interpretation = await self._get_ai_interpretation(question, divination_data, user_name, is_premium)
+            print("DEBUG: AI Inference done")
+            
+            return {
+                'question': question,
+                'timestamp': now,
+                'iching': {
+                    'primary': primary_hex,
+                    'secondary': secondary_hex,
+                    'formatted': iching.format_hexagram(primary_hex)
+                },
+                'tarot': {
+                    'card': tarot_card,
+                    'formatted': tarot.deck.format_card(tarot_card)
+                },
+                'horary': {
+                    'chart': horary_chart,
+                    # Safe formatting if chart is None
+                    'formatted': horary.format_chart(horary_chart) if horary_chart else "Хорарная карта временно недоступна"
+                },
+                'interpretation': ai_interpretation
+            }
+        except Exception as e:
+            print(f"❌ CRITICAL ERROR in process_question: {e}")
+            import traceback
+            traceback.print_exc()
+            raise e
     
     def _format_divination_data(
         self, 
