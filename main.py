@@ -353,6 +353,12 @@ class OracleBot:
             
         user = update.effective_user
         
+        # Гарантируем, что пользователь существует в БД перед проверкой лимитов
+        try:
+            user_manager.get_or_create_user(user)
+        except Exception as e:
+            logger.error(f"Failed to create user in DB: {e}")
+            
         # Проверка лимитов с обработкой ошибок
         try:
             allowed, result = user_manager.check_and_update_limits(user.id, free_limit=settings.free_questions_per_day)
