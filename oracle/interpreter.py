@@ -40,6 +40,13 @@ class OracleInterpreter:
         else:
             self.client = Anthropic(api_key=settings.anthropic_api_key)
             self.ai_provider = "anthropic"
+            
+        # Determine Model
+        self.model = settings.ai_model
+        if settings.ai_provider == "groq" and self.model.startswith("gpt"):
+            print(f"⚠️ Model {self.model} not compatible with Groq. Switching to llama3-70b-8192.")
+            self.model = "llama3-70b-8192"
+
     
     async def process_question(self, question: str, user_name: str = "Искатель", is_premium: bool = False) -> Dict[str, Any]:
         """
@@ -139,7 +146,7 @@ class OracleInterpreter:
         
         if self.ai_provider == "openai":
             response = self.client.chat.completions.create(
-                model=settings.ai_model,
+                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -151,7 +158,7 @@ class OracleInterpreter:
         
         elif self.ai_provider == "anthropic":
             response = self.client.messages.create(
-                model=settings.ai_model,
+                model=self.model,
                 max_tokens=max_len,
                 temperature=0.8,
                 system=system_prompt,
@@ -174,7 +181,7 @@ class OracleInterpreter:
         
         if self.ai_provider == "openai":
             response = self.client.chat.completions.create(
-                model=settings.ai_model,
+                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -185,7 +192,7 @@ class OracleInterpreter:
             return response.choices[0].message.content
         elif self.ai_provider == "anthropic":
             response = self.client.messages.create(
-                model=settings.ai_model,
+                model=self.model,
                 max_tokens=300,
                 temperature=0.7,
                 system=system_prompt,
@@ -227,7 +234,7 @@ class OracleInterpreter:
 
         if self.ai_provider == "openai":
             response = self.client.chat.completions.create(
-                model=settings.ai_model,
+                model=self.model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -238,7 +245,7 @@ class OracleInterpreter:
             return response.choices[0].message.content
         elif self.ai_provider == "anthropic":
             response = self.client.messages.create(
-                model=settings.ai_model,
+                model=self.model,
                 max_tokens=max_len,
                 temperature=0.8,
                 system=system_prompt,
