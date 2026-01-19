@@ -305,8 +305,7 @@ class OracleBot:
             "Можешь написать текстом или записать голосовое сообщение.",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-        # Устанавливаем состояние ожидания вопроса
-        context.user_data['awaiting_question'] = True
+        # awaiting_question removed - any text message not handled by awaiting_data flows is treated as a question
     
         # Команда ritual удалена
     
