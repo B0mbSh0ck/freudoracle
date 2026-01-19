@@ -16,36 +16,54 @@ class OracleInterpreter:
     """Интерпретатор оракула, объединяющий все методы"""
     
     def __init__(self):
-        # Инициализируем AI клиент с поддержкой Groq и fallback
-        if settings.ai_provider == "groq":
-            # Groq использует OpenAI-compatible API
-            if settings.groq_api_key:
+        # 1. Авто-определение провайдера если ключи не совпадают с настройками
+        provider = settings.ai_provider
+        
+        # Если выбран OpenAI, но ключа нет, а Groq есть -> переключаем на Groq
+        if provider == "openai" and not settings.openai_api_key and settings.groq_api_key:
+            print("🔄 OpenAI key missing, switching to GROQ")
+            provider = "groq"
+            
+        # 2. Инициализация клиента
+        if provider == "groq":
+            if not settings.groq_api_key:
+                 # Если и Groq ключа нет, но есть OpenAI (на всякий случай)
+                 if settings.openai_api_key:
+                     print("⚠️ Groq key missing, falling back to OpenAI")
+                     provider = "openai"
+                 else:
+                     raise ValueError("❌ AI Error: No API keys found! Set GROQ_API_KEY or OPENAI_API_KEY.")
+            
+            if provider == "groq":
                 self.client = openai.OpenAI(
                     api_key=settings.groq_api_key,
                     base_url="https://api.groq.com/openai/v1"
                 )
-                self.ai_provider = "openai"  # Используем OpenAI интерфейс
-                print("🚀 Groq API активирован (БЕСПЛАТНО + БЫСТРО!)")
-            elif settings.openai_api_key:
-                # Fallback на OpenAI
-                self.client = openai.OpenAI(api_key=settings.openai_api_key)
-                self.ai_provider = "openai"
-                print("⚠️ Groq ключ не найден, используем OpenAI")
-            else:
-                raise ValueError("Нужен GROQ_API_KEY или OPENAI_API_KEY в .env")
-        
-        elif settings.ai_provider == "openai":
+                self.ai_provider = "openai" # Технически используем OpenAI либу
+                self.is_groq = True
+                print("🚀 Groq API initialized")
+
+        if provider == "openai":
+            if not settings.openai_api_key:
+                 raise ValueError("❌ AI Error: OpenAI API key missing!")
             self.client = openai.OpenAI(api_key=settings.openai_api_key)
             self.ai_provider = "openai"
-        else:
+            self.is_groq = False
+            
+        elif provider == "anthropic":
+            if not settings.anthropic_api_key:
+                 raise ValueError("❌ AI Error: Anthropic API key missing!")
             self.client = Anthropic(api_key=settings.anthropic_api_key)
             self.ai_provider = "anthropic"
-            
-        # Determine Model
+            self.is_groq = False
+
+        # 3. Настройка модели
         self.model = settings.ai_model
-        if settings.ai_provider == "groq" and self.model.startswith("gpt"):
-            print(f"⚠️ Model {self.model} not compatible with Groq. Switching to llama3-70b-8192.")
-            self.model = "llama3-70b-8192"
+        
+        # Если включен Groq, но модель от OpenAI -> меняем на Llama
+        if getattr(self, 'is_groq', False) and self.model.startswith("gpt"):
+             print(f"⚠️ Switching model {self.model} -> llama3-70b-8192 (Groq compatible)")
+             self.model = "llama3-70b-8192"
 
     
     async def process_question(self, question: str, user_name: str = "Искатель", is_premium: bool = False) -> Dict[str, Any]:
