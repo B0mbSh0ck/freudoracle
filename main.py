@@ -281,6 +281,8 @@ class OracleBot:
     
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка текстовых сообщений"""
+        logger.info(f"Handler: received message from {update.effective_user.id}: {update.message.text}")
+
         if await handle_awaiting_data(update, context):
             return
             
@@ -351,21 +353,27 @@ class OracleBot:
             
         user = update.effective_user
         
-        # Проверка лимитов
-        allowed, result = user_manager.check_and_update_limits(user.id, free_limit=settings.free_questions_per_day)
-        
-        if not allowed:
-            keyboard = [[InlineKeyboardButton("💎 Купить Энергию", callback_data="premium")]]
-            await update.message.reply_text(
-                f"🪫 *Энергия исчерпана*\n\n{result}\nПриходи завтра или получи безлимитный доступ.",
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode='Markdown'
-            )
-            return
+        # Проверка лимитов с обработкой ошибок
+        try:
+            allowed, result = user_manager.check_and_update_limits(user.id, free_limit=settings.free_questions_per_day)
+            
+            if not allowed:
+                keyboard = [[InlineKeyboardButton("💎 Купить Энергию", callback_data="premium")]]
+                await update.message.reply_text(
+                    f"🪫 *Энергия исчерпана*\n\n{result}\nПриходи завтра или получи безлимитный доступ.",
+                    reply_markup=InlineKeyboardMarkup(keyboard),
+                    parse_mode='Markdown'
+                )
+                return
 
-        if isinstance(result, str) and result.startswith("bonus_"):
-            bonus_left = result.split("_")[1]
-            await update.message.reply_text(f"✨ Использовано бонусное озарение! (Осталось: {bonus_left})")
+            if isinstance(result, str) and result.startswith("bonus_"):
+                bonus_left = result.split("_")[1]
+                await update.message.reply_text(f"✨ Использовано бонусное озарение! (Осталось: {bonus_left})")
+        except Exception as e:
+            logger.error(f"Error checking limits: {e}")
+            # В случае ошибки лимитов - пускаем (fail open) или блокируем? Лучше пустить, чтобы не блокировать юзера из-за бага
+            logger.warning("Limit check failed, allowing request as fallback")
+
 
         processing_msg = await update.message.reply_text(
             "🙏 Обращаюсь к Источнику с твоим вопросом...\n"
@@ -419,10 +427,18 @@ class OracleBot:
             
         except Exception as e:
             logger.error(f"Error processing question: {e}")
-            await processing_msg.edit_text(
-                "😔 Видение затуманено... Произошла ошибка. "
-                "Пожалуйста, попробуй позже или напиши в поддержку. 🛠"
-            )
+            # Пытаемся отредактировать сообщение о процессинге, если оно осталось
+            try:
+                await processing_msg.edit_text(
+                    "😔 Видение затуманено... Произошла ошибка. "
+                    "Пожалуйста, попробуй позже или напиши в поддержку. 🛠"
+                )
+            except:
+                # Если, например, processing_msg уже удалено
+                await update.message.reply_text(
+                    "😔 Ошибка обработки. Попробуйте еще раз."
+                )
+
     
 
     async def natal_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
