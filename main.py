@@ -110,6 +110,7 @@ class OracleBot:
         self.app.add_handler(CommandHandler("ask", self.ask_command))
         self.app.add_handler(CommandHandler("stats", self.stats_command))
         self.app.add_handler(CommandHandler("debug_info", self.debug_info_command))
+        self.app.add_handler(CommandHandler("test_ai", self.test_ai_command))
         
         # Новые команды
         self.app.add_handler(CommandHandler("natal", self.natal_command))
@@ -162,6 +163,38 @@ class OracleBot:
             await update.message.reply_text(msg, parse_mode='Markdown')
         except Exception as e:
             await update.message.reply_text(f"Debug Error: {e}")
+
+    async def test_ai_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """DEBUG: Test AI generation directly"""
+        try:
+            interp = oracle_interpreter
+            await update.message.reply_text(f"🧪 Testing AI...\nProvider: {interp.ai_provider}\nModel: {interp.model}")
+            
+            if interp.ai_provider == "openai":
+                response = interp.client.chat.completions.create(
+                    model=interp.model,
+                    messages=[{"role": "user", "content": "Just say 'Works!'"}],
+                    max_tokens=10
+                )
+                result = response.choices[0].message.content
+            elif interp.ai_provider == "anthropic":
+                response = interp.client.messages.create(
+                    model=interp.model,
+                    max_tokens=10,
+                    messages=[{"role": "user", "content": "Just say 'Works!'"}]
+                )
+                result = response.content[0].text
+            else:
+                 result = "Unknown provider"
+                 
+            await update.message.reply_text(f"✅ SUCCESS: {result}")
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            # Send error in chunks if too long
+            await update.message.reply_text(f"❌ ERROR:\n{e}")
+            if len(tb) < 3000:
+                await update.message.reply_text(f"Traceback:\n`{tb}`", parse_mode='Markdown')
             
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /start"""
