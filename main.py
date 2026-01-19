@@ -109,6 +109,7 @@ class OracleBot:
         self.app.add_handler(CommandHandler("help", self.help_command))
         self.app.add_handler(CommandHandler("ask", self.ask_command))
         self.app.add_handler(CommandHandler("stats", self.stats_command))
+        self.app.add_handler(CommandHandler("debug_info", self.debug_info_command))
         
         # Новые команды
         self.app.add_handler(CommandHandler("natal", self.natal_command))
@@ -135,6 +136,33 @@ class OracleBot:
         # Голосовые сообщения
         self.app.add_handler(MessageHandler(filters.VOICE, self.handle_voice))
     
+    async def debug_info_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """DEBUG: Show internal configuration"""
+        try:
+            interp = oracle_interpreter
+            
+            groq_key = settings.groq_api_key
+            openai_key = settings.openai_api_key
+            
+            censored_groq = f"{groq_key[:4]}...{groq_key[-4:]}" if groq_key else "None"
+            censored_openai = f"{openai_key[:4]}...{openai_key[-4:]}" if openai_key else "None"
+            
+            is_groq = getattr(interp, 'is_groq', False)
+            
+            msg = (
+                f"🐞 *DEBUG INFO*\n"
+                f"Config Provider: `{settings.ai_provider}`\n"
+                f"Active Provider: `{interp.ai_provider}`\n"
+                f"Is Groq Mode: `{is_groq}`\n"
+                f"Model: `{interp.model}`\n"
+                f"Groq Key: `{censored_groq}`\n"
+                f"OpenAI Key: `{censored_openai}`\n"
+                f"Base URL: `{interp.client.base_url}`"
+            )
+            await update.message.reply_text(msg, parse_mode='Markdown')
+        except Exception as e:
+            await update.message.reply_text(f"Debug Error: {e}")
+            
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /start"""
         self._reset_state(context)
