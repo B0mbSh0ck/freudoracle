@@ -523,6 +523,17 @@ class OracleBot:
             
         except Exception as e:
             logger.error(f"Error processing question: {e}")
+            import traceback
+            tb_str = traceback.format_exc()
+            logger.error(f"Full traceback:\n{tb_str}")
+            
+            # TEMPORARY DEBUG: Send error details to user
+            try:
+                error_msg = f"❌ DEBUG ERROR:\n`{str(e)}`\n\nTraceback:\n```\n{tb_str[:2500]}\n```"
+                await update.message.reply_text(error_msg, parse_mode='Markdown')
+            except Exception as send_err:
+                logger.error(f"Failed to send debug message: {send_err}")
+            
             # Пытаемся отредактировать сообщение о процессинге, если оно осталось
             try:
                 await processing_msg.edit_text(
@@ -531,9 +542,7 @@ class OracleBot:
                 )
             except:
                 # Если, например, processing_msg уже удалено
-                await update.message.reply_text(
-                    "😔 Ошибка обработки. Попробуйте еще раз."
-                )
+                pass
 
     
 
