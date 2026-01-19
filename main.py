@@ -1219,6 +1219,19 @@ def main():
     # Инициализация базы данных
     init_db()
     
+    # --- DIAGNOSTIC STARTUP LOGGING ---
+    logger.info("--- ORACLE BOT STARTUP DIAGNOSTICS ---")
+    
+    # Check Env Vars
+    env_keys = ["TELEGRAM_BOT_TOKEN", "OPENAI_API_KEY", "GROQ_API_KEY", "ANTHROPIC_API_KEY", "DATABASE_URL"]
+    for key in env_keys:
+        value = os.getenv(key)
+        masked = f"{value[:4]}...{value[-4:]}" if value else "None"
+        logger.info(f"ENV {key}: {masked}")
+        
+    logger.info("--------------------------------------")
+    # ----------------------------------
+
     bot = OracleBot()
     bot.run()
 

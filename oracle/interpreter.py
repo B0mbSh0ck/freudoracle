@@ -65,6 +65,18 @@ class OracleInterpreter:
              print(f"⚠️ Switching model {self.model} -> llama-3.3-70b-versatile (Groq compatible)")
              self.model = "llama-3.3-70b-versatile"
 
+        # --- DIAGNOSTIC LOGGING ---
+        try:
+            censored_groq = f"{settings.groq_api_key[:4]}...{settings.groq_api_key[-4:]}" if settings.groq_api_key else "None"
+            censored_openai = f"{settings.openai_api_key[:4]}...{settings.openai_api_key[-4:]}" if settings.openai_api_key else "None"
+            print(f"DEBUG: Oracle Init Complete.")
+            print(f"DEBUG: Config Provider={settings.ai_provider} -> Final Provider={self.ai_provider} (is_groq={getattr(self, 'is_groq', False)})")
+            print(f"DEBUG: Keys -> Groq={censored_groq}, OpenAI={censored_openai}")
+            print(f"DEBUG: Selected Model={self.model}")
+        except Exception as e:
+            print(f"DEBUG: Logging error: {e}")
+        # --------------------------
+
     
     async def process_question(self, question: str, user_name: str = "Искатель", is_premium: bool = False) -> Dict[str, Any]:
         """
@@ -163,28 +175,40 @@ class OracleInterpreter:
         user_prompt = f"{divination_data}\n\nДай свою интерпретацию, о мудрый Оракул."
         
         if self.ai_provider == "openai":
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.8,
-                max_tokens=max_len
-            )
-            return response.choices[0].message.content
+            try:
+                print(f"DEBUG: sending request to {self.ai_provider} with model {self.model}...")
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.8,
+                    max_tokens=max_len
+                )
+                print("DEBUG: Request successful.")
+                return response.choices[0].message.content
+            except Exception as e:
+                print(f"❌ API ERROR ({self.ai_provider}): {e}")
+                import traceback
+                traceback.print_exc()
+                return "Взору моему предстала пелена (Ошибка связи с Источником). Попробуй позже."
         
         elif self.ai_provider == "anthropic":
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=max_len,
-                temperature=0.8,
-                system=system_prompt,
-                messages=[
-                    {"role": "user", "content": user_prompt}
-                ]
-            )
-            return response.content[0].text
+            try:
+                response = self.client.messages.create(
+                    model=self.model,
+                    max_tokens=max_len,
+                    temperature=0.8,
+                    system=system_prompt,
+                    messages=[
+                        {"role": "user", "content": user_prompt}
+                    ]
+                )
+                return response.content[0].text
+            except Exception as e:
+                print(f"❌ API ERROR (Anthropic): {e}")
+                return "Источник временно недоступен."
     
     async def generate_followup_response(self, original_question: str, followup_question: str, context: Dict[str, Any]) -> str:
         """Ответить на уточняющий вопрос"""
