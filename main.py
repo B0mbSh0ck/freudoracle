@@ -111,6 +111,7 @@ class OracleBot:
         self.app.add_handler(CommandHandler("stats", self.stats_command))
         self.app.add_handler(CommandHandler("debug_info", self.debug_info_command))
         self.app.add_handler(CommandHandler("test_ai", self.test_ai_command))
+        self.app.add_handler(CommandHandler("force_question", self.force_question_command))
         
         # Новые команды
         self.app.add_handler(CommandHandler("natal", self.natal_command))
@@ -195,6 +196,35 @@ class OracleBot:
             await update.message.reply_text(f"❌ ERROR:\n{e}")
             if len(tb) < 3000:
                 await update.message.reply_text(f"Traceback:\n`{tb}`", parse_mode='Markdown')
+
+    async def force_question_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """DEBUG: Force oracle question with full error exposure"""
+        try:
+            await update.message.reply_text("🧪 Testing FULL Oracle Flow (Iching+Tarot+Horary+AI)...")
+            
+            interp = oracle_interpreter
+            user = update.effective_user
+            
+            # Force a test question through the FULL oracle stack
+            result = await interp.process_question(
+                question="Test question", 
+                user_name=user.first_name,
+                is_premium=False
+            )
+            
+            await update.message.reply_text(f"✅ SUCCESS! Oracle responded.")
+            await update.message.reply_text(f"Response preview:\n{result['interpretation'][:500]}...")
+            
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            await update.message.reply_text(f"❌ ORACLE ERROR:\n{e}")
+            # Split into chunks if needed
+            if len(tb) < 3000:
+                await update.message.reply_text(f"```\n{tb}\n```", parse_mode='Markdown')
+            else:
+                # Send first 3000 chars
+                await update.message.reply_text(f"```\n{tb[:3000]}\n```", parse_mode='Markdown')
             
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Команда /start"""
