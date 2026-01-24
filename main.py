@@ -113,14 +113,7 @@ class OracleBot:
         self.app.add_handler(CommandHandler("test_ai", self.test_ai_command))
         self.app.add_handler(CommandHandler("force_question", self.force_question_command))
         
-        # Новые команды
-        self.app.add_handler(CommandHandler("natal", self.natal_command))
-        self.app.add_handler(CommandHandler("numerology", self.numerology_command))
-        self.app.add_handler(CommandHandler("matrix", self.matrix_command))
-        self.app.add_handler(CommandHandler("horoscope", self.horoscope_command))
-        self.app.add_handler(CommandHandler("tarot", self.tarot_command))
-        self.app.add_handler(CommandHandler("compatibility", self.compatibility_command))
-        self.app.add_handler(CommandHandler("dream", self.dream_command))
+        # Новые команды удалены для отката версии
         
         # Callback кнопки
         self.app.add_handler(CallbackQueryHandler(self.button_handler))
@@ -253,9 +246,7 @@ class OracleBot:
         
         keyboard = [
             [InlineKeyboardButton("🔮 ЗАДАТЬ ВОПРОС", callback_data="ask")],
-            [InlineKeyboardButton("🃏 Послание дня", callback_data="daily_message"), InlineKeyboardButton("😴 Трактовка сна", callback_data="dream_menu")],
-            [InlineKeyboardButton("👤 Профиль", callback_data="stats"), InlineKeyboardButton("🧠 Лучше к психологу", url="https://t.me/hypnotic_fire")],
-            [InlineKeyboardButton("✨ Другие возможности", callback_data="menu")]
+            [InlineKeyboardButton("👤 Профиль", callback_data="stats"), InlineKeyboardButton("🧠 Психолог", url="https://t.me/hypnotic_fire")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -279,13 +270,6 @@ class OracleBot:
 
 *🔮 ГАДАНИЯ И ОТВЕТЫ:*
 • /ask - Задать любой вопрос (Таро + И-Цзин + Астро)
-• /horoscope - Гороскоп
-• /dream - Трактовка сна
-
-*🌟 АНАЛИЗ ЛИЧНОСТИ:*
-• /natal - Натальная карта
-• /numerology - Нумерология Сюцай
-• /matrix - Матрица Судьбы
 
 *❓ Как спрашивать:*
 Просто напиши свой вопрос или запиши голосовое сообщение. Чем конкретнее вопрос, тем точнее ответ. ✨
