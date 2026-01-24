@@ -26,13 +26,6 @@ class User(Base):
     last_question_date = Column(DateTime, default=datetime.utcnow)
     total_questions_asked = Column(Integer, default=0)
     
-    # Лимиты на Таро (расклады)
-    last_tarot_date = Column(DateTime, default=datetime.utcnow)
-    tarot_today = Column(Integer, default=0)
-    
-    # Лимиты на трактовку снов (подробно)
-    last_dream_detailed_date = Column(DateTime, nullable=True)
-    
     # Реферальная система
     referred_by = Column(Integer, nullable=True)
     referral_count = Column(Integer, default=0)
