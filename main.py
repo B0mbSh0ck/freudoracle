@@ -309,27 +309,12 @@ class OracleBot:
 
 ✨ Статус: *{status}*
 """
-        # Данные пользователя
-        user_data = user_manager.get_user_data(user.id)
-        if user_data:
-            if user_data.birth_date:
-                stats_text += f"📅 Дата рождения: *{user_data.birth_date.strftime('%d.%m.%Y')}*\n"
-            if user_data.zodiac_sign:
-                # Находим эмодзи
-                sign_en = None
-                for en, ru in horoscope_parser.SIGN_NAMES_RU.items():
-                    if ru.lower() == user_data.zodiac_sign.lower():
-                        sign_en = en
-                        break
-                emoji = horoscope_parser.SIGN_EMOJIS.get(sign_en, "✨")
-                stats_text += f"♈ Знак: *{emoji} {user_data.zodiac_sign}*\n"
         
         stats_text += f"""
 {energy_emoji} Энергии сегодня: *{db_user.questions_today}/{settings.free_questions_per_day}*
 ♾ Всего озарений: *{db_user.total_questions_asked}*
 👥 Приглашено друзей: *{db_user.referral_count}*
 ✨ Бонусных озарений: *{db_user.bonus_questions}*
-🃏 Раскладов Таро: *{db_user.tarot_today}/1*
 """
         if db_user.is_premium and db_user.premium_until:
              stats_text += f"📅 Активен до: *{db_user.premium_until.strftime('%d.%m.%Y')}*\n"
